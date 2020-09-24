@@ -1,5 +1,6 @@
 var Plotly = require('@lib/index');
 var d3 = require('d3');
+var utcFormat = require('d3-time-format').utcFormat;
 
 var Plots = require('@src/plots/plots');
 var Lib = require('@src/lib');
@@ -13,6 +14,7 @@ var Axes = require('@src/plots/cartesian/axes');
 var Fx = require('@src/components/fx');
 var supplyLayoutDefaults = require('@src/plots/cartesian/layout_defaults');
 var BADNUM = require('@src/constants/numerical').BADNUM;
+var ONEDAY = require('@src/constants/numerical').ONEDAY;
 
 var createGraphDiv = require('../assets/create_graph_div');
 var destroyGraphDiv = require('../assets/destroy_graph_div');
@@ -830,6 +832,68 @@ describe('Test axes', function() {
             expect(layoutOut._axisMatchGroups).toContain({y: 1, y2: 1, y3: 1});
         });
 
+        it('should find matching group even when matching a *missing* axis', function() {
+            layoutIn = {
+                // N.B. xaxis isn't set
+                xaxis2: {matches: 'x'},
+                xaxis3: {matches: 'x'},
+                xaxis4: {matches: 'x'},
+                // N.B. yaxis isn't set
+                yaxis2: {matches: 'y'},
+                yaxis3: {matches: 'y2'},
+                yaxis4: {matches: 'y3'},
+            };
+            layoutOut._subplots.cartesian = ['x2y2', 'x3y3', 'x4y4'];
+            layoutOut._subplots.xaxis = ['x2', 'x3', 'x4'];
+            layoutOut._subplots.yaxis = ['y2', 'y3', 'y4'];
+
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut._axisMatchGroups.length).toBe(2);
+            expect(layoutOut._axisMatchGroups).toContain({x: 1, x2: 1, x3: 1, x4: 1});
+            expect(layoutOut._axisMatchGroups).toContain({y: 1, y2: 1, y3: 1, y4: 1});
+
+            // should coerce the 'missing' axes
+            expect(layoutIn.xaxis).toBeDefined();
+            expect(layoutIn.yaxis).toBeDefined();
+            expect(layoutOut.xaxis).toBeDefined();
+            expect(layoutOut.yaxis).toBeDefined();
+        });
+
+        it('should find matching group even when matching a *missing* axis (nested case)', function() {
+            layoutIn = {
+                // N.B. xaxis isn't set
+                // N.B. xaxis2 is set, but does not correspond to a subplot
+                xaxis2: {matches: 'x'},
+                xaxis3: {matches: 'x2'},
+                xaxis4: {matches: 'x3'},
+                // N.B. yaxis isn't set
+                // N.B yaxis2 does not correspond to a subplot and is useless here
+                yaxis2: {matches: 'y'},
+                yaxis3: {matches: 'y'},
+                yaxis4: {matches: 'y3'}
+            };
+            layoutOut._subplots.cartesian = ['x3y3', 'x4y4'];
+            layoutOut._subplots.xaxis = ['x3', 'x4'];
+            layoutOut._subplots.yaxis = ['y3', 'y4'];
+
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut._axisMatchGroups.length).toBe(2);
+            expect(layoutOut._axisMatchGroups).toContain({x: 1, x2: 1, x3: 1, x4: 1});
+            expect(layoutOut._axisMatchGroups).toContain({y: 1, y3: 1, y4: 1});
+
+            // should coerce the 'missing' axes
+            expect(layoutIn.xaxis).toBeDefined();
+            expect(layoutIn.yaxis).toBeDefined();
+            expect(layoutOut.xaxis).toBeDefined();
+            expect(layoutOut.yaxis).toBeDefined();
+
+            // should coerce useless axes
+            expect(layoutIn.yaxis2).toEqual({matches: 'y'});
+            expect(layoutOut.yaxis2).toBeUndefined();
+        });
+
         it('should match set axis range value for matching axes', function() {
             layoutIn = {
                 // autorange case
@@ -871,6 +935,72 @@ describe('Test axes', function() {
             _assertMatchingAxes(['xaxis4', 'yaxis4'], false, [-1, 3]);
         });
 
+        it('should match set axis range value for matching axes even when matching a *missing* axis', function() {
+            layoutIn = {
+                // N.B. xaxis is set, but does not correspond to a subplot
+                xaxis: {range: [0, 1]},
+                xaxis2: {matches: 'x'},
+                xaxis4: {matches: 'x'}
+            };
+            layoutOut._subplots.cartesian = ['x2y2', 'x4y4'];
+            layoutOut._subplots.xaxis = ['x2', 'x4'];
+            layoutOut._subplots.yaxis = ['y2', 'y4'];
+
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut._axisMatchGroups.length).toBe(1);
+            expect(layoutOut._axisMatchGroups).toContain({x: 1, x2: 1, x4: 1});
+
+            expect(layoutOut.xaxis.range).withContext('xaxis.range').toEqual([0, 1]);
+            expect(layoutOut.xaxis2.range).withContext('xaxis2.range').toEqual([0, 1]);
+            expect(layoutOut.xaxis4.range).withContext('xaxis4.range').toEqual([0, 1]);
+        });
+
+        it('should match set axis range value for matching axes even when matching a *missing* axis (nested case)', function() {
+            layoutIn = {
+                // N.B. xaxis is set, but does not correspond to a subplot
+                xaxis: {range: [0, 1]},
+                // N.B. xaxis2 is set, but does not correspond to a subplot
+                xaxis2: {matches: 'x'},
+                xaxis3: {matches: 'x2'},
+                xaxis4: {matches: 'x3'}
+            };
+            layoutOut._subplots.cartesian = ['x3y3', 'x4y4'];
+            layoutOut._subplots.xaxis = ['x3', 'x4'];
+            layoutOut._subplots.yaxis = ['y3', 'y4'];
+
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut._axisMatchGroups.length).toBe(1);
+            expect(layoutOut._axisMatchGroups).toContain({x: 1, x2: 1, x3: 1, x4: 1});
+
+            expect(layoutOut.xaxis.range).withContext('xaxis.range').toEqual([0, 1]);
+            expect(layoutOut.xaxis2.range).withContext('xaxis2.range').toEqual([0, 1]);
+            expect(layoutOut.xaxis2.range).withContext('xaxis3.range').toEqual([0, 1]);
+            expect(layoutOut.xaxis4.range).withContext('xaxis4.range').toEqual([0, 1]);
+        });
+
+        it('should propagate axis type into *missing* axes', function() {
+            layoutIn = {
+                xaxis2: {type: 'date', matches: 'x'},
+                yaxis: {type: 'category', matches: 'y2'}
+            };
+            layoutOut._subplots.cartesian = ['x2y'];
+            layoutOut._subplots.xaxis = ['x2'];
+            layoutOut._subplots.yaxis = ['y'];
+
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut._axisMatchGroups.length).toBe(2);
+            expect(layoutOut._axisMatchGroups).toContain({x: 1, x2: 1});
+            expect(layoutOut._axisMatchGroups).toContain({y: 1, y2: 1});
+
+            expect(layoutOut.xaxis.type).withContext('xaxis.type').toBe('date');
+            expect(layoutOut.xaxis2.type).withContext('xaxis2.type').toBe('date');
+            expect(layoutOut.yaxis.type).withContext('yaxis.type').toBe('category');
+            expect(layoutOut.yaxis2.type).withContext('yaxis2.type').toBe('category');
+        });
+
         it('should adapt default axis ranges to *rangemode*', function() {
             layoutIn = {
                 xaxis: {rangemode: 'tozero'},
@@ -888,6 +1018,216 @@ describe('Test axes', function() {
             expect(layoutOut.xaxis2.range).withContext('xaxis2 range').toEqual([0, 6]);
             expect(layoutOut.yaxis.range).withContext('yaxis range').toEqual([0, 4]);
             expect(layoutOut.yaxis2.range).withContext('yaxis2 range').toEqual([0, 4]);
+        });
+
+        it('should coerce *rangebreaks* container only on a date axis', function() {
+            var bounds = ['2020-01-10', '2020-01-11'];
+            layoutIn = {
+                xaxis: {rangebreaks: [{bounds: bounds}], type: 'date'},
+                xaxis2: {rangebreaks: [{bounds: bounds}], type: '-'},
+                xaxis3: {rangebreaks: [{bounds: bounds}], type: 'linear'},
+                xaxis4: {rangebreaks: [{bounds: bounds}], type: 'log'},
+                xaxis5: {rangebreaks: [{bounds: bounds}], type: 'category'},
+                xaxis6: {rangebreaks: [{bounds: bounds}], type: 'multicategory'}
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3', 'x4', 'x5', 'x6');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(Array.isArray(layoutOut.xaxis.rangebreaks) && layoutOut.xaxis.rangebreaks.length)
+                .toBe(1, 'xaxis.rangebreaks is array of length 1');
+            expect(layoutOut.xaxis2.rangebreaks).toBeUndefined();
+            expect(layoutOut.xaxis3.rangebreaks).toBeUndefined();
+            expect(layoutOut.xaxis4.rangebreaks).toBeUndefined();
+            expect(layoutOut.xaxis5.rangebreaks).toBeUndefined();
+            expect(layoutOut.xaxis6.rangebreaks).toBeUndefined();
+        });
+
+        it('should coerce *rangebreaks* container only when it is a non-empty array', function() {
+            layoutIn = {
+                xaxis: {type: 'date', rangebreaks: [{bounds: ['2020-01-10', '2020-01-11']}]},
+                xaxis2: {type: 'date', rangebreaks: []},
+                xaxis3: {type: 'date', rangebreaks: false},
+                xaxis4: {type: 'date'}
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3', 'x4');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(Array.isArray(layoutOut.xaxis.rangebreaks) && layoutOut.xaxis.rangebreaks.length)
+                .toBe(1, 'xaxis.rangebreaks is array of length 1');
+            expect(layoutOut.xaxis2.rangebreaks).toBeUndefined();
+            expect(layoutOut.xaxis3.rangebreaks).toBeUndefined();
+            expect(layoutOut.xaxis4.rangebreaks).toBeUndefined();
+        });
+
+        it('should set *rangebreaks* to *enabled:false* when *bounds* have less than 2 items', function() {
+            layoutIn = {
+                xaxis: {type: 'date', rangebreaks: [{bounds: ['2020-01-10']}]},
+                xaxis2: {type: 'date', rangebreaks: [{bounds: ['2020-01-10'], values: ['2020-01-11']}]},
+                xaxis3: {type: 'date', rangebreaks: [{bounds: ['2020-01-10'], values: {}}]},
+                xaxis4: {type: 'date', rangebreaks: [{bounds: ['2020-01-10', '2020-01-11', '2020-01-12']}]}
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3', 'x4');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut.xaxis.rangebreaks[0].enabled).toBe(false, 'invalid *bounds*');
+            expect(layoutOut.xaxis2.rangebreaks[0].enabled).toBe(true, 'invalid *bounds*, valid *values*');
+            expect(layoutOut.xaxis3.rangebreaks[0].enabled).toBe(false, 'invalid *bounds*, invalid *values*');
+            expect(layoutOut.xaxis4.rangebreaks[0].enabled && layoutOut.xaxis4.rangebreaks[0].bounds)
+                .withContext('valid *bounds*, sliced to length=2').toEqual(['2020-01-10', '2020-01-11']);
+        });
+
+        it('if *rangebreaks* *bounds* are bigger than the set *range*, disable rangebreak', function() {
+            layoutIn = {
+                xaxis: {type: 'date', range: ['2020-01-10', '2020-01-14'], rangebreaks: [{bounds: ['2020-01-11', '2020-01-12']}]},
+                xaxis2: {type: 'date', range: ['2020-01-11', '2020-01-12'], rangebreaks: [{bounds: ['2020-01-10', '2020-01-14']}]},
+                xaxis3: {type: 'date', range: ['2020-01-14', '2020-01-10'], rangebreaks: [{bounds: ['2020-01-12', '2020-01-11']}]},
+                xaxis4: {type: 'date', range: ['2020-01-12', '2020-01-11'], rangebreaks: [{bounds: ['2020-01-14', '2020-01-10']}]}
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3', 'x4');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut.xaxis.rangebreaks[0].enabled).toBe(true, '*bounds* within set range');
+            expect(layoutOut.xaxis2.rangebreaks[0].enabled).toBe(false, '*bounds* bigger than set range');
+            expect(layoutOut.xaxis3.rangebreaks[0].enabled).toBe(true, '*bounds* within set range (reversed)');
+            expect(layoutOut.xaxis4.rangebreaks[0].enabled).toBe(false, '*bounds* bigger than set range (reversed)');
+        });
+
+        it('should coerce *rangebreaks* *bounds* over *values*/*dvalue* if both are present', function() {
+            layoutIn = {
+                xaxis: {type: 'date', rangebreaks: [{bounds: ['2020-01-10', '2020-01-11']}]},
+                xaxis2: {type: 'date', rangebreaks: [{values: ['2020-01-10', '2020-01-12', '2020-01-14'], dvalue: 2}]},
+                xaxis3: {type: 'date', rangebreaks: [{bounds: ['2020-01-10', '2020-01-11'], values: ['2020-01-10', '2020-01-12', '2020-01-14'], dvalue: 2}]},
+                xaxis4: {type: 'date', rangebreaks: [{bounds: false, values: ['2020-01-10', '2020-01-12', '2020-01-14'], dvalue: 2}]},
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3', 'x4');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            var xaBreak = layoutOut.xaxis.rangebreaks[0];
+            expect(xaBreak.bounds).withContext('valid *bounds*').toEqual(['2020-01-10', '2020-01-11']);
+            expect(xaBreak.values).toBe(undefined, 'not coerced');
+            expect(xaBreak.dvalue).toBe(undefined, 'not coerced');
+
+            xaBreak = layoutOut.xaxis2.rangebreaks[0];
+            expect(xaBreak.bounds).toBe(undefined, 'not set, not coerced');
+            expect(xaBreak.values).withContext('valid *values*').toEqual(['2020-01-10', '2020-01-12', '2020-01-14']);
+            expect(xaBreak.dvalue).toBe(2, 'valid *dvalue*');
+
+            xaBreak = layoutOut.xaxis3.rangebreaks[0];
+            expect(xaBreak.bounds).withContext('set to valid, coerced').toEqual(['2020-01-10', '2020-01-11']);
+            expect(xaBreak.values).toBe(undefined, 'not coerced');
+            expect(xaBreak.dvalue).toBe(undefined, 'not coerced');
+
+            xaBreak = layoutOut.xaxis4.rangebreaks[0];
+            expect(xaBreak.bounds).toBe(undefined, 'set but invalid, not coerced');
+            expect(xaBreak.values).withContext('valid *values*').toEqual(['2020-01-10', '2020-01-12', '2020-01-14']);
+            expect(xaBreak.dvalue).toBe(2, 'valid *dvalue*');
+        });
+
+        it('should only coerce rangebreaks *pattern* with *bounds*', function() {
+            layoutIn = {
+                xaxis: {type: 'date', rangebreaks: [{bounds: ['2020-01-04', '2020-01-05']}]},
+                xaxis2: {type: 'date', rangebreaks: [{bounds: [6, 1], pattern: 'day of week'}]},
+                xaxis3: {type: 'date', rangebreaks: [{values: ['2020-01-04', '2020-01-05'], pattern: 'NOP'}]},
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut.xaxis.rangebreaks[0].pattern).toBe('', 'coerced to dflt value');
+            expect(layoutOut.xaxis2.rangebreaks[0].pattern).toBe('day of week', 'coerced');
+            expect(layoutOut.xaxis3.rangebreaks[0].pattern).toBe(undefined, 'not coerce, using *values*');
+        });
+
+        it('should auto default rangebreaks.pattern to *day of week* when *bounds* include a weekday string and convert bounds to integer days', function() {
+            layoutIn = {
+                xaxis: {type: 'date', rangebreaks: [
+                    {bounds: ['Saturday', 'Monday']}
+                ]},
+                xaxis2: {type: 'date', rangebreaks: [
+                    {bounds: ['sun', 'thu']},
+                    {bounds: ['mon', 'fri']},
+                    {bounds: ['tue', 'sat']},
+                    {bounds: ['wed', '-1']}
+                ]}
+            };
+            layoutOut._subplots.xaxis.push('x2');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut.xaxis.rangebreaks[0].pattern).toBe('day of week', 'complete Capital');
+            expect(layoutOut.xaxis2.rangebreaks[0].pattern).toBe('day of week', '3-letter case');
+            expect(layoutOut.xaxis2.rangebreaks[0].bounds[0]).toBe(0, 'convert sun');
+            expect(layoutOut.xaxis2.rangebreaks[1].bounds[0]).toBe(1, 'convert mon');
+            expect(layoutOut.xaxis2.rangebreaks[2].bounds[0]).toBe(2, 'convert tue');
+            expect(layoutOut.xaxis2.rangebreaks[3].bounds[0]).toBe(3, 'convert wed');
+            expect(layoutOut.xaxis2.rangebreaks[0].bounds[1]).toBe(4, 'convert thu');
+            expect(layoutOut.xaxis2.rangebreaks[1].bounds[1]).toBe(5, 'convert fri');
+            expect(layoutOut.xaxis2.rangebreaks[2].bounds[1]).toBe(6, 'convert sat');
+            expect(layoutOut.xaxis2.rangebreaks[3].bounds[1]).toBe('-1', 'string');
+        });
+
+        it('should validate inputs in respect to *day of week* pattern', function() {
+            layoutIn = {
+                xaxis: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: ['6', '0'] }]},
+                xaxis2: {type: 'date', rangebreaks: [{bounds: ['Sunday'] }]},
+                xaxis3: {type: 'date', rangebreaks: [{bounds: ['sun', 'mon', 'tue'] }]},
+                xaxis4: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, '-1'] }]},
+                xaxis5: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, '-.25'] }]},
+                xaxis6: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, '7'] }]},
+                xaxis7: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, '6.75'] }]},
+                xaxis8: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, ''] }]},
+                xaxis9: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, null] }]},
+                xaxis10: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, false] }]},
+                xaxis11: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, true] }]}
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'x11');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut.xaxis.rangebreaks[0].enabled).toBe(true, 'valid');
+            expect(layoutOut.xaxis.rangebreaks[0].bounds[0]).toBe(6, 'cast float to int');
+            expect(layoutOut.xaxis.rangebreaks[0].bounds[1]).toBe(0, 'cast string to int');
+            expect(layoutOut.xaxis2.rangebreaks[0].enabled).toBe(false, 'reject bounds.length < 2');
+            expect(layoutOut.xaxis3.rangebreaks[0].enabled).toBe(true, 'do not reject bounds.length > 2');
+            expect(layoutOut.xaxis3.rangebreaks[0].bounds.length).toBe(2, 'pick first two');
+            expect(layoutOut.xaxis4.rangebreaks[0].enabled).toBe(false, 'reject bound < 0');
+            expect(layoutOut.xaxis5.rangebreaks[0].enabled).toBe(false, 'reject bound < 0');
+            expect(layoutOut.xaxis6.rangebreaks[0].enabled).toBe(false, 'reject bound >= 7');
+            expect(layoutOut.xaxis7.rangebreaks[0].enabled).toBe(false, 'reject bound < 7 - not supported yet');
+            expect(layoutOut.xaxis8.rangebreaks[0].enabled).toBe(false, 'reject blank string');
+            expect(layoutOut.xaxis9.rangebreaks[0].enabled).toBe(false, 'reject null');
+            expect(layoutOut.xaxis10.rangebreaks[0].enabled).toBe(false, 'reject false');
+            expect(layoutOut.xaxis11.rangebreaks[0].enabled).toBe(false, 'reject true');
+        });
+
+        it('should validate inputs in respect to *hour* pattern', function() {
+            layoutIn = {
+                xaxis: {type: 'date', rangebreaks: [{pattern: 'hour', bounds: ['24', '1e-3'] }]},
+                xaxis2: {type: 'date', rangebreaks: [{pattern: 'hour', bounds: [1] }]},
+                xaxis3: {type: 'date', rangebreaks: [{pattern: 'hour', bounds: [1, 2, 3] }]},
+                xaxis4: {type: 'date', rangebreaks: [{pattern: 'hour', bounds: [1, '-1'] }]},
+                xaxis5: {type: 'date', rangebreaks: [{pattern: 'hour', bounds: [1, '-.001'] }]},
+                xaxis6: {type: 'date', rangebreaks: [{pattern: 'hour', bounds: [1, '24.001'] }]},
+                xaxis7: {type: 'date', rangebreaks: [{pattern: 'hour', bounds: [1, '23.999'] }]},
+                xaxis8: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, ''] }]},
+                xaxis9: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, null] }]},
+                xaxis10: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, false] }]},
+                xaxis11: {type: 'date', rangebreaks: [{pattern: 'day of week', bounds: [1, true] }]}
+            };
+            layoutOut._subplots.xaxis.push('x2', 'x3', 'x4', 'x5', 'x6', 'x7', 'x8', 'x9', 'x10', 'x11');
+            supplyLayoutDefaults(layoutIn, layoutOut, fullData);
+
+            expect(layoutOut.xaxis.rangebreaks[0].enabled).toBe(true, 'valid');
+            expect(layoutOut.xaxis.rangebreaks[0].bounds[0]).toBe(24, 'accept 24');
+            expect(layoutOut.xaxis.rangebreaks[0].bounds[1]).toBe(0.001, 'cast string to float');
+            expect(layoutOut.xaxis2.rangebreaks[0].enabled).toBe(false, 'reject bounds.length < 2');
+            expect(layoutOut.xaxis3.rangebreaks[0].enabled).toBe(true, 'do not reject bounds.length > 2');
+            expect(layoutOut.xaxis3.rangebreaks[0].bounds.length).toBe(2, 'pick first two');
+            expect(layoutOut.xaxis4.rangebreaks[0].enabled).toBe(false, 'reject bound < 0');
+            expect(layoutOut.xaxis5.rangebreaks[0].enabled).toBe(false, 'reject bound < 0');
+            expect(layoutOut.xaxis6.rangebreaks[0].enabled).toBe(false, 'reject bound > 24');
+            expect(layoutOut.xaxis7.rangebreaks[0].enabled).toBe(true, 'do not reject bound <= 24');
+            expect(layoutOut.xaxis8.rangebreaks[0].enabled).toBe(false, 'reject blank string');
+            expect(layoutOut.xaxis9.rangebreaks[0].enabled).toBe(false, 'reject null');
+            expect(layoutOut.xaxis10.rangebreaks[0].enabled).toBe(false, 'reject false');
+            expect(layoutOut.xaxis11.rangebreaks[0].enabled).toBe(false, 'reject true');
         });
     });
 
@@ -1513,7 +1853,14 @@ describe('Test axes', function() {
     });
 
     describe('handleTickValueDefaults', function() {
+        var viaTemplate;
+
         function mockSupplyDefaults(axIn, axOut, axType) {
+            if(viaTemplate) {
+                axOut._template = axIn;
+                axIn = {};
+            }
+
             function coerce(attr, dflt) {
                 return Lib.coerce(axIn, axOut, Cartesian.layoutAttributes, attr, dflt);
             }
@@ -1521,193 +1868,215 @@ describe('Test axes', function() {
             handleTickValueDefaults(axIn, axOut, coerce, axType);
         }
 
-        it('should set default tickmode correctly', function() {
-            var axIn = {};
-            var axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tickmode).toBe('auto');
-            // and not push it back to axIn (which we used to do)
-            expect(axIn.tickmode).toBeUndefined();
+        [
+            '(without template) ',
+            '(with template) '
+        ].forEach(function(woTemplate, index) {
+            viaTemplate = index === 1;
 
-            axIn = {tickmode: 'array', tickvals: 'stuff'};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tickmode).toBe('auto');
-            expect(axIn.tickmode).toBe('array');
+            it(woTemplate + 'should set default tickmode correctly', function() {
+                var axIn = {};
+                var axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tickmode).toBe('auto');
+                // and not push it back to axIn (which we used to do)
+                expect(axIn.tickmode).toBeUndefined();
 
-            axIn = {tickmode: 'array', tickvals: [1, 2, 3]};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'date');
-            expect(axOut.tickmode).toBe('auto');
-            expect(axIn.tickmode).toBe('array');
+                axIn = {tickmode: 'array', tickvals: 'stuff'};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tickmode).toBe('auto');
+                expect(axIn.tickmode).toBe('array');
 
-            axIn = {tickvals: [1, 2, 3]};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tickmode).toBe('array');
-            expect(axIn.tickmode).toBeUndefined();
+                axIn = {tickvals: [1, 2, 3]};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'date');
+                expect(axOut.tickmode).toBe('array');
+                expect(axIn.tickmode).toBeUndefined();
 
-            axIn = {dtick: 1};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tickmode).toBe('linear');
-            expect(axIn.tickmode).toBeUndefined();
-        });
+                axIn = {tickmode: 'array', tickvals: [1, 2, 3]};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'date');
+                expect(axOut.tickmode).toBe('array');
+                expect(axIn.tickmode).toBe('array');
 
-        it('should set nticks iff tickmode=auto', function() {
-            var axIn = {};
-            var axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.nticks).toBe(0);
+                axIn = {tickvals: [1, 2, 3]};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tickmode).toBe('array');
+                expect(axIn.tickmode).toBeUndefined();
 
-            axIn = {tickmode: 'auto', nticks: 5};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.nticks).toBe(5);
+                var arr = new Float32Array(2);
+                arr[0] = 0;
+                arr[1] = 1;
+                axIn = {tickvals: arr};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tickmode).toBe('array');
+                expect(axIn.tickmode).toBeUndefined();
 
-            axIn = {tickmode: 'linear', nticks: 15};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.nticks).toBe(undefined);
-        });
-
-        it('should set tick0 and dtick iff tickmode=linear', function() {
-            var axIn = {tickmode: 'auto', tick0: 1, dtick: 1};
-            var axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tick0).toBe(undefined);
-            expect(axOut.dtick).toBe(undefined);
-
-            axIn = {tickvals: [1, 2, 3], tick0: 1, dtick: 1};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tick0).toBe(undefined);
-            expect(axOut.dtick).toBe(undefined);
-
-            axIn = {tick0: 2.71, dtick: 0.00828};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tick0).toBe(2.71);
-            expect(axOut.dtick).toBe(0.00828);
-
-            axIn = {tickmode: 'linear', tick0: 3.14, dtick: 0.00159};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tick0).toBe(3.14);
-            expect(axOut.dtick).toBe(0.00159);
-        });
-
-        it('should handle tick0 and dtick for date axes', function() {
-            var someMs = 123456789;
-            var someMsDate = Lib.ms2DateTimeLocal(someMs);
-            var oneDay = 24 * 3600 * 1000;
-            var axIn = {tick0: someMs, dtick: String(3 * oneDay)};
-            var axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'date');
-            expect(axOut.tick0).toBe(someMsDate);
-            expect(axOut.dtick).toBe(3 * oneDay);
-
-            var someDate = '2011-12-15 13:45:56';
-            axIn = {tick0: someDate, dtick: 'M15'};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'date');
-            expect(axOut.tick0).toBe(someDate);
-            expect(axOut.dtick).toBe('M15');
-
-            // dtick without tick0: get the right default
-            axIn = {dtick: 'M12'};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'date');
-            expect(axOut.tick0).toBe('2000-01-01');
-            expect(axOut.dtick).toBe('M12');
-
-            var errors = [];
-            spyOn(Loggers, 'error').and.callFake(function(msg) {
-                errors.push(msg);
+                axIn = {dtick: 1};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tickmode).toBe('linear');
+                expect(axIn.tickmode).toBeUndefined();
             });
 
-            // now some stuff that shouldn't work, should give defaults
-            [
-                ['next thursday', -1],
-                ['123-45', 'L1'],
-                ['', 'M0.5'],
-                ['', 'M-1'],
-                ['', '2000-01-01']
-            ].forEach(function(v, i) {
-                axIn = {tick0: v[0], dtick: v[1]};
+            it(woTemplate + 'should set nticks if tickmode=auto', function() {
+                var axIn = {};
+                var axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.nticks).toBe(0);
+
+                axIn = {tickmode: 'auto', nticks: 5};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.nticks).toBe(5);
+
+                axIn = {tickmode: 'linear', nticks: 15};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.nticks).toBe(undefined);
+            });
+
+            it(woTemplate + 'should set tick0 and dtick if tickmode=linear', function() {
+                var axIn = {tickmode: 'auto', tick0: 1, dtick: 1};
+                var axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tick0).toBe(undefined);
+                expect(axOut.dtick).toBe(undefined);
+
+                axIn = {tickvals: [1, 2, 3], tick0: 1, dtick: 1};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tick0).toBe(undefined);
+                expect(axOut.dtick).toBe(undefined);
+
+                axIn = {tick0: 2.71, dtick: 0.00828};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tick0).toBe(2.71);
+                expect(axOut.dtick).toBe(0.00828);
+
+                axIn = {tickmode: 'linear', tick0: 3.14, dtick: 0.00159};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tick0).toBe(3.14);
+                expect(axOut.dtick).toBe(0.00159);
+            });
+
+            it(woTemplate + 'should handle tick0 and dtick for date axes', function() {
+                var someMs = 123456789;
+                var someMsDate = Lib.ms2DateTimeLocal(someMs);
+                var oneDay = 24 * 3600 * 1000;
+                var axIn = {tick0: someMs, dtick: String(3 * oneDay)};
+                var axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'date');
+                expect(axOut.tick0).toBe(someMsDate);
+                expect(axOut.dtick).toBe(3 * oneDay);
+
+                var someDate = '2011-12-15 13:45:56';
+                axIn = {tick0: someDate, dtick: 'M15'};
+                axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'date');
+                expect(axOut.tick0).toBe(someDate);
+                expect(axOut.dtick).toBe('M15');
+
+                // dtick without tick0: get the right default
+                axIn = {dtick: 'M12'};
                 axOut = {};
                 mockSupplyDefaults(axIn, axOut, 'date');
                 expect(axOut.tick0).toBe('2000-01-01');
-                expect(axOut.dtick).toBe(oneDay);
-                expect(errors.length).toBe(i + 1);
+                expect(axOut.dtick).toBe('M12');
+
+                var errors = [];
+                spyOn(Loggers, 'error').and.callFake(function(msg) {
+                    errors.push(msg);
+                });
+
+                // now some stuff that shouldn't work, should give defaults
+                [
+                    ['next thursday', -1],
+                    ['123-45', 'L1'],
+                    ['', 'M0.5'],
+                    ['', 'M-1'],
+                    ['', '2000-01-01']
+                ].forEach(function(v, i) {
+                    axIn = {tick0: v[0], dtick: v[1]};
+                    axOut = {};
+                    mockSupplyDefaults(axIn, axOut, 'date');
+                    expect(axOut.tick0).toBe('2000-01-01');
+                    expect(axOut.dtick).toBe(oneDay);
+                    expect(errors.length).toBe(i + 1);
+                });
             });
-        });
 
-        it('should handle tick0 and dtick for log axes', function() {
-            var axIn = {tick0: '0.2', dtick: 0.3};
-            var axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'log');
-            expect(axOut.tick0).toBe(0.2);
-            expect(axOut.dtick).toBe(0.3);
-
-            ['D1', 'D2'].forEach(function(v) {
-                axIn = {tick0: -1, dtick: v};
-                axOut = {};
+            it(woTemplate + 'should handle tick0 and dtick for log axes', function() {
+                var axIn = {tick0: '0.2', dtick: 0.3};
+                var axOut = {};
                 mockSupplyDefaults(axIn, axOut, 'log');
-                // tick0 gets ignored for D<n>
-                expect(axOut.tick0).toBeUndefined(v);
-                expect(axOut.dtick).toBe(v);
+                expect(axOut.tick0).toBe(0.2);
+                expect(axOut.dtick).toBe(0.3);
+
+                ['D1', 'D2'].forEach(function(v) {
+                    axIn = {tick0: -1, dtick: v};
+                    axOut = {};
+                    mockSupplyDefaults(axIn, axOut, 'log');
+                    // tick0 gets ignored for D<n>
+                    expect(axOut.tick0).toBeUndefined(v);
+                    expect(axOut.dtick).toBe(v);
+                });
+
+                [
+                    [-1, 'L3'],
+                    ['0.2', 'L0.3'],
+                    [-1, 3],
+                    ['0.1234', '0.69238473']
+                ].forEach(function(v) {
+                    axIn = {tick0: v[0], dtick: v[1]};
+                    axOut = {};
+                    mockSupplyDefaults(axIn, axOut, 'log');
+                    expect(axOut.tick0).toBe(Number(v[0]));
+                    expect(axOut.dtick).toBe((+v[1]) ? Number(v[1]) : v[1]);
+                });
+
+                // now some stuff that should not work, should give defaults
+                [
+                    ['', -1],
+                    ['D1', 'D3'],
+                    ['', 'D0'],
+                    ['2011-01-01', 'L0'],
+                    ['', 'L-1']
+                ].forEach(function(v) {
+                    axIn = {tick0: v[0], dtick: v[1]};
+                    axOut = {};
+                    mockSupplyDefaults(axIn, axOut, 'log');
+                    expect(axOut.tick0).toBe(0);
+                    expect(axOut.dtick).toBe(1);
+                });
             });
 
-            [
-                [-1, 'L3'],
-                ['0.2', 'L0.3'],
-                [-1, 3],
-                ['0.1234', '0.69238473']
-            ].forEach(function(v) {
-                axIn = {tick0: v[0], dtick: v[1]};
+            it(woTemplate + 'should set tickvals and ticktext if tickmode=array', function() {
+                var axIn = {tickmode: 'auto', tickvals: [1, 2, 3], ticktext: ['4', '5', '6']};
+                var axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tickvals).toBe(undefined);
+                expect(axOut.ticktext).toBe(undefined);
+
+                axIn = {tickvals: [2, 4, 6, 8], ticktext: ['who', 'do', 'we', 'appreciate']};
                 axOut = {};
-                mockSupplyDefaults(axIn, axOut, 'log');
-                expect(axOut.tick0).toBe(Number(v[0]));
-                expect(axOut.dtick).toBe((+v[1]) ? Number(v[1]) : v[1]);
+                mockSupplyDefaults(axIn, axOut, 'linear');
+                expect(axOut.tickvals).toEqual([2, 4, 6, 8]);
+                expect(axOut.ticktext).toEqual(['who', 'do', 'we', 'appreciate']);
             });
 
-            // now some stuff that should not work, should give defaults
-            [
-                ['', -1],
-                ['D1', 'D3'],
-                ['', 'D0'],
-                ['2011-01-01', 'L0'],
-                ['', 'L-1']
-            ].forEach(function(v) {
-                axIn = {tick0: v[0], dtick: v[1]};
-                axOut = {};
-                mockSupplyDefaults(axIn, axOut, 'log');
-                expect(axOut.tick0).toBe(0);
-                expect(axOut.dtick).toBe(1);
+            it(woTemplate + 'should not coerce ticktext/tickvals on multicategory axes', function() {
+                var axIn = {tickvals: [1, 2, 3], ticktext: ['4', '5', '6']};
+                var axOut = {};
+                mockSupplyDefaults(axIn, axOut, 'multicategory');
+                expect(axOut.tickvals).toBe(undefined);
+                expect(axOut.ticktext).toBe(undefined);
             });
-        });
-
-        it('should set tickvals and ticktext iff tickmode=array', function() {
-            var axIn = {tickmode: 'auto', tickvals: [1, 2, 3], ticktext: ['4', '5', '6']};
-            var axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tickvals).toBe(undefined);
-            expect(axOut.ticktext).toBe(undefined);
-
-            axIn = {tickvals: [2, 4, 6, 8], ticktext: ['who', 'do', 'we', 'appreciate']};
-            axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'linear');
-            expect(axOut.tickvals).toEqual([2, 4, 6, 8]);
-            expect(axOut.ticktext).toEqual(['who', 'do', 'we', 'appreciate']);
-        });
-
-        it('should not coerce ticktext/tickvals on multicategory axes', function() {
-            var axIn = {tickvals: [1, 2, 3], ticktext: ['4', '5', '6']};
-            var axOut = {};
-            mockSupplyDefaults(axIn, axOut, 'multicategory');
-            expect(axOut.tickvals).toBe(undefined);
-            expect(axOut.ticktext).toBe(undefined);
         });
     });
 
@@ -3774,6 +4143,1832 @@ describe('Test axes', function() {
             .then(done);
         });
     });
+
+    describe('*rangebreaks*', function() {
+        describe('during doCalcdata', function() {
+            var gd;
+
+            function _calc(trace, layout) {
+                gd = {data: [trace], layout: layout};
+                supplyDefaults(gd);
+                Plots.doCalcdata(gd);
+            }
+
+            function _assert(msg, exp) {
+                var cd = gd.calcdata[0];
+                var xc = cd.map(function(cdi) { return cdi.x; });
+                expect(xc).withContext(msg).toEqual(exp);
+            }
+
+            it('should discard coords within break bounds', function() {
+                var x = [
+                    '1970-01-01 00:00:00.000',
+                    '1970-01-01 00:00:00.010',
+                    '1970-01-01 00:00:00.050',
+                    '1970-01-01 00:00:00.090',
+                    '1970-01-01 00:00:00.100',
+                    '1970-01-01 00:00:00.150',
+                    '1970-01-01 00:00:00.190',
+                    '1970-01-01 00:00:00.200'
+                ];
+
+                _calc({
+                    x: x
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {bounds: [
+                                '1970-01-01 00:00:00.010',
+                                '1970-01-01 00:00:00.090'
+                            ]},
+                            {bounds: [
+                                '1970-01-01 00:00:00.100',
+                                '1970-01-01 00:00:00.190'
+                            ]}
+                        ]
+                    }
+                });
+                _assert('', [0, BADNUM, BADNUM, 90, BADNUM, BADNUM, 190, 200]);
+            });
+
+            it('should discard coords within break bounds - date day of week case', function() {
+                var x = [
+                    // Thursday
+                    '2020-01-02 08:00', '2020-01-02 16:00',
+                    // Friday
+                    '2020-01-03 08:00', '2020-01-03 16:00',
+                    // Saturday
+                    '2020-01-04 08:00', '2020-01-04 16:00',
+                    // Sunday
+                    '2020-01-05 08:00', '2020-01-05 16:00',
+                    // Monday
+                    '2020-01-06 08:00', '2020-01-06 16:00',
+                    // Tuesday
+                    '2020-01-07 08:00', '2020-01-07 16:00'
+                ];
+
+                var noWeekend = [
+                    1577952000000, 1577980800000,
+                    1578038400000, 1578067200000,
+                    BADNUM, BADNUM,
+                    BADNUM, BADNUM,
+                    1578297600000, 1578326400000,
+                    1578384000000, 1578412800000
+                ];
+
+                _calc({x: x}, {
+                    xaxis: {
+                        rangebreaks: [
+                            {pattern: 'day of week', bounds: [6, 1]}
+                        ]
+                    }
+                });
+                _assert('[6,1]', noWeekend);
+            });
+
+            it('should discard coords within break bounds - date hour case', function() {
+                _calc({
+                    x: [
+                        '2020-01-02 08:00', '2020-01-02 20:00',
+                        '2020-01-03 08:00', '2020-01-03 20:00',
+                        '2020-01-04 08:00', '2020-01-04 20:00',
+                        '2020-01-05 08:00', '2020-01-05 20:00',
+                        '2020-01-06 08:00', '2020-01-06 20:00',
+                        '2020-01-07 08:00', '2020-01-07 20:00'
+                    ]
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {pattern: 'hour', bounds: [17, 8]}
+                        ]
+                    }
+                });
+                _assert('', [
+                    1577952000000, BADNUM,
+                    1578038400000, BADNUM,
+                    1578124800000, BADNUM,
+                    1578211200000, BADNUM,
+                    1578297600000, BADNUM,
+                    1578384000000, BADNUM
+                ]);
+            });
+
+            it('should discard coords within break bounds - date hour / high precision case', function() {
+                _calc({
+                    x: [
+                        '2020-01-03 16:45',
+                        '2020-01-03 17:00',
+                        '2020-01-03 17:15',
+                        '2020-01-03 17:30',
+                        '2020-01-06 7:45',
+                        '2020-01-06 8:00',
+                        '2020-01-06 8:15',
+                        '2020-01-06 8:30'
+                    ]
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {pattern: 'hour', bounds: [17, 8]}
+                        ]
+                    }
+                });
+                _assert('', [
+                    Lib.dateTime2ms('2020-01-03 16:45'),
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    Lib.dateTime2ms('2020-01-06 8:00'),
+                    Lib.dateTime2ms('2020-01-06 8:15'),
+                    Lib.dateTime2ms('2020-01-06 8:30')
+                ]);
+            });
+
+            it('should discard coords within break bounds - date hour case of [23, 1]', function() {
+                _calc({
+                    x: [
+                        '2020-01-01 22',
+                        '2020-01-01 23',
+                        '2020-01-01 23:30',
+                        '2020-01-01 23:59',
+                        '2020-01-01 23:59:30',
+                        '2020-01-01 23:59:59',
+                        '2020-01-02 00:00:00',
+                        '2020-01-02 00:00:01',
+                        '2020-01-02 00:00:30',
+                        '2020-01-02 00:30',
+                        '2020-01-02 01',
+                        '2020-01-02 02'
+                    ]
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {pattern: 'hour', bounds: [23, 1]}
+                        ]
+                    }
+                });
+                _assert('', [
+                    Lib.dateTime2ms('2020-01-01 22'),
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    Lib.dateTime2ms('2020-01-02 01'),
+                    Lib.dateTime2ms('2020-01-02 02')
+                ]);
+            });
+
+            it('should discard coords within break bounds - date hour case of [23, 0]', function() {
+                _calc({
+                    x: [
+                        '2020-01-01 22',
+                        '2020-01-01 23',
+                        '2020-01-01 23:30',
+                        '2020-01-01 23:59',
+                        '2020-01-01 23:59:30',
+                        '2020-01-01 23:59:59',
+                        '2020-01-02 00:00:00',
+                        '2020-01-02 00:00:01',
+                        '2020-01-02 00:00:30',
+                        '2020-01-02 00:30',
+                        '2020-01-02 01',
+                        '2020-01-02 02'
+                    ]
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {pattern: 'hour', bounds: [23, 0]}
+                        ]
+                    }
+                });
+                _assert('', [
+                    Lib.dateTime2ms('2020-01-01 22'),
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    Lib.dateTime2ms('2020-01-02 00:00:00'),
+                    Lib.dateTime2ms('2020-01-02 00:00:01'),
+                    Lib.dateTime2ms('2020-01-02 00:00:30'),
+                    Lib.dateTime2ms('2020-01-02 00:30'),
+                    Lib.dateTime2ms('2020-01-02 01'),
+                    Lib.dateTime2ms('2020-01-02 02')
+                ]);
+            });
+
+            it('should discard coords within break bounds - date hour case of [23, 24]', function() {
+                _calc({
+                    x: [
+                        '2020-01-01 22',
+                        '2020-01-01 23',
+                        '2020-01-01 23:30',
+                        '2020-01-01 23:59',
+                        '2020-01-01 23:59:30',
+                        '2020-01-01 23:59:59',
+                        '2020-01-02 00:00:00',
+                        '2020-01-02 00:00:01',
+                        '2020-01-02 00:00:30',
+                        '2020-01-02 00:30',
+                        '2020-01-02 01',
+                        '2020-01-02 02'
+                    ]
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {pattern: 'hour', bounds: [23, 24]}
+                        ]
+                    }
+                });
+                _assert('', [
+                    Lib.dateTime2ms('2020-01-01 22'),
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    Lib.dateTime2ms('2020-01-02 00:00:00'),
+                    Lib.dateTime2ms('2020-01-02 00:00:01'),
+                    Lib.dateTime2ms('2020-01-02 00:00:30'),
+                    Lib.dateTime2ms('2020-01-02 00:30'),
+                    Lib.dateTime2ms('2020-01-02 01'),
+                    Lib.dateTime2ms('2020-01-02 02')
+                ]);
+            });
+
+            it('should discard coords within break bounds - date hour case of [23.75, 0.25]', function() {
+                _calc({
+                    x: [
+                        '2020-01-01 22',
+                        '2020-01-01 23',
+                        '2020-01-01 23:30',
+                        '2020-01-01 23:59',
+                        '2020-01-01 23:59:30',
+                        '2020-01-01 23:59:59',
+                        '2020-01-02 00:00:00',
+                        '2020-01-02 00:00:01',
+                        '2020-01-02 00:00:30',
+                        '2020-01-02 00:30',
+                        '2020-01-02 01',
+                        '2020-01-02 02'
+                    ]
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {pattern: 'hour', bounds: [23.75, 0.25]}
+                        ]
+                    }
+                });
+                _assert('', [
+                    Lib.dateTime2ms('2020-01-01 22'),
+                    Lib.dateTime2ms('2020-01-01 23'),
+                    Lib.dateTime2ms('2020-01-01 23:30'),
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    BADNUM,
+                    Lib.dateTime2ms('2020-01-02 00:30'),
+                    Lib.dateTime2ms('2020-01-02 01'),
+                    Lib.dateTime2ms('2020-01-02 02')
+                ]);
+            });
+
+            it('should discard coords within [values[i], values[i] + dvalue] bounds', function() {
+                var x = [
+                    // Thursday
+                    '2020-01-02 08:00', '2020-01-02 16:00',
+                    // Friday
+                    '2020-01-03 08:00', '2020-01-03 16:00',
+                    // Saturday
+                    '2020-01-04 08:00', '2020-01-04 16:00',
+                    // Sunday
+                    '2020-01-05 08:00', '2020-01-05 16:00',
+                    // Monday
+                    '2020-01-06 08:00', '2020-01-06 16:00',
+                    // Tuesday
+                    '2020-01-07 08:00', '2020-01-07 16:00'
+                ];
+
+                _calc({x: x}, {
+                    xaxis: {
+                        rangebreaks: [{values: ['2020-01-04', '2020-01-05'], dvalue: ONEDAY}],
+                    }
+                });
+                _assert('two values', [
+                    1577952000000, 1577980800000,
+                    1578038400000, 1578067200000,
+                    BADNUM, BADNUM,
+                    BADNUM, BADNUM,
+                    1578297600000, 1578326400000,
+                    1578384000000, 1578412800000
+                ]);
+            });
+
+            it('should discard coords equal to two consecutive open values bounds', function() {
+                _calc({
+                    x: [
+                        '1970-01-01 00:00:00.001',
+                        '1970-01-01 00:00:00.002',
+                        '1970-01-01 00:00:00.003',
+                        '1970-01-01 00:00:00.004',
+                        '1970-01-01 00:00:00.005'
+                    ]
+                }, {
+                    xaxis: {
+                        rangebreaks: [{ values: [
+                            '1970-01-01 00:00:00.002',
+                            '1970-01-01 00:00:00.003'
+                        ], dvalue: 1 }]
+                    }
+                });
+                _assert('', [1, BADNUM, BADNUM, 4, 5]);
+            });
+
+            it('should adapt coords generated from x0/dx about rangebreaks', function() {
+                _calc({
+                    x0: '1970-01-01 00:00:00.001',
+                    dx: 0.5,
+                    y: [1, 3, 5, 2, 4]
+                }, {
+                    xaxis: {
+                        rangebreaks: [
+                            {bounds: [
+                                '1970-01-01 00:00:00.002',
+                                '1970-01-01 00:00:00.003'
+                            ]}
+                        ]
+                    }
+                });
+                _assert('generated x=2.5 gets masked', [1, 1.5, BADNUM, BADNUM, 3]);
+            });
+        });
+
+        describe('during doAutorange', function() {
+            var gd;
+
+            beforeEach(function() {
+                gd = createGraphDiv();
+            });
+
+            afterEach(destroyGraphDiv);
+
+            function _assert(msg, exp) {
+                expect(gd._fullLayout.xaxis.range).toEqual(exp.xrng, msg + '| x range');
+                expect(gd._fullLayout.xaxis._lBreaks).toBe(exp.lBreaks, msg + '| lBreaks');
+            }
+
+            it('should adapt padding about axis rangebreaks length', function(done) {
+                Plotly.plot(gd, [{
+                    mode: 'markers',
+                    x: [
+                        '1970-01-01 00:00:00.000',
+                        '1970-01-01 00:00:00.010',
+                        '1970-01-01 00:00:00.050',
+                        '1970-01-01 00:00:00.090',
+                        '1970-01-01 00:00:00.100',
+                        '1970-01-01 00:00:00.150',
+                        '1970-01-01 00:00:00.190',
+                        '1970-01-01 00:00:00.200'
+                    ]
+                }], {
+                    xaxis: {
+                        rangebreaks: [
+                            {bounds: [
+                                '1970-01-01 00:00:00.011',
+                                '1970-01-01 00:00:00.089'
+                            ]},
+                            {bounds: [
+                                '1970-01-01 00:00:00.101',
+                                '1970-01-01 00:00:00.189'
+                            ]}
+                        ]
+                    }
+                })
+                .then(function() {
+                    _assert('mode:markers (i.e. with padding)', {
+                        xrng: ['1969-12-31 23:59:59.9978', '1970-01-01 00:00:00.2022'],
+                        lBreaks: 166
+                    });
+                })
+                .then(function() {
+                    gd.data[0].mode = 'lines';
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('mode:lines (i.e. no padding)', {
+                        xrng: ['1970-01-01', '1970-01-01 00:00:00.2'],
+                        lBreaks: 166
+                    });
+                })
+                .then(function() {
+                    gd.data[0].mode = 'markers';
+                    gd.layout.xaxis.rangebreaks[0].enabled = false;
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('mode:markers | one of two rangebreaks enabled', {
+                        xrng: ['1969-12-31 23:59:59.9928', '1970-01-01 00:00:00.2072'],
+                        lBreaks: 88
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks[1].enabled = false;
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('mode:markers | no rangebreaks enabled', {
+                        xrng: ['1969-12-31 23:59:59.9871', '1970-01-01 00:00:00.2129'],
+                        lBreaks: 0
+                    });
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        describe('during setConvert (once range is available)', function() {
+            var gd;
+
+            beforeEach(function() {
+                gd = createGraphDiv();
+            });
+
+            afterEach(destroyGraphDiv);
+
+            function _assert(msg, axLetter, exp) {
+                var fullLayout = gd._fullLayout;
+                var ax = fullLayout[axLetter + 'axis'];
+
+                if(exp) {
+                    expect(ax._rangebreaks.length)
+                        .toBe(exp.rangebreaks.length, msg + '| correct # of rangebreaks');
+                    expect(ax._rangebreaks.map(function(brk) { return [brk.min, brk.max]; }))
+                        .toBeCloseTo2DArray(exp.rangebreaks, 2, msg + '| rangebreaks [min,max]');
+
+                    expect(ax._m2).toBe(exp.m2, msg + '| l2p slope');
+                    expect(ax._B).toBeCloseToArray(exp.B, 2, msg + '| l2p piecewise offsets');
+                } else {
+                    expect(ax._rangebreaks).withContext(msg).toEqual([]);
+                    expect(ax._m2).toBe(0, msg);
+                    expect(ax._B).withContext(msg).toEqual([]);
+                }
+            }
+
+            it('should locate rangebreaks & compute l <-> p parameters - x-axis case', function(done) {
+                Plotly.plot(gd, [{
+                    x: [
+                        '1970-01-01 00:00:00.000',
+                        '1970-01-01 00:00:00.010',
+                        '1970-01-01 00:00:00.050',
+                        '1970-01-01 00:00:00.090',
+                        '1970-01-01 00:00:00.100',
+                        '1970-01-01 00:00:00.150',
+                        '1970-01-01 00:00:00.190',
+                        '1970-01-01 00:00:00.200'
+                    ]
+                }], {
+                    xaxis: {}
+                })
+                .then(function() {
+                    _assert('no set rangebreaks', 'x', null);
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {bounds: [
+                            '1970-01-01 00:00:00.011',
+                            '1970-01-01 00:00:00.089'
+                        ]},
+                        {bounds: [
+                            '1970-01-01 00:00:00.101',
+                            '1970-01-01 00:00:00.189'
+                        ]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('2 disjoint rangebreaks within range', 'x', {
+                        rangebreaks: [[11, 89], [101, 189]],
+                        m2: 14.062499999998405,
+                        B: [30.937, -1065.937, -2303.437]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {bounds: [
+                            '1970-01-01 00:00:00.011',
+                            '1970-01-01 00:00:00.089'
+                        ]},
+                        {bounds: [
+                            '1970-01-01 00:00:00.070',
+                            '1970-01-01 00:00:00.189'
+                        ]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('2 overlapping rangebreaks within range', 'x', {
+                        rangebreaks: [[11, 189]],
+                        m2: 21.7741935483922,
+                        B: [30.483, -3845.322]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {bounds: [
+                            '1969-12-31 23:59:59.990',
+                            '1970-01-01 00:00:00.089'
+                        ]},
+                        {bounds: [
+                            '1970-01-01 00:00:00.101',
+                            '1970-01-01 00:00:00.189'
+                        ]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('break beyond xaxis.range[0]', 'x', {
+                        rangebreaks: [[88.6, 89], [101, 189]],
+                        m2: 22.1311475409836,
+                        B: [-1960.819, -1969.672, -3917.213]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {bounds: [
+                            '1970-01-01 00:00:00.011',
+                            '1970-01-01 00:00:00.089'
+                        ]},
+                        {bounds: [
+                            '1970-01-01 00:00:00.101',
+                            '1970-01-01 00:00:00.300'
+                        ]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('break beyond xaxis.range[1]', 'x', {
+                        rangebreaks: [[11, 89], [101, 101.4]],
+                        m2: 22.131147540988888,
+                        B: [30.983, -1695.245, -1704.098]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {bounds: [
+                            '1969-12-31 23:59:59.989',
+                            '1970-01-01 00:00:00.090'
+                        ]},
+                        {bounds: [
+                            '1970-01-01 00:00:00.101',
+                            '1970-01-01 00:00:00.300'
+                        ]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('both rangebreaks beyond xaxis.range', 'x', {
+                        rangebreaks: [[89.4, 90]],
+                        m2: 50.943396226415125,
+                        B: [-4554.339622641512, -4584.9056603773615]
+                    });
+                })
+                .catch(failTest)
+                .then(done);
+            });
+
+            it('should locate rangebreaks & compute l <-> p parameters - y-axis case', function(done) {
+                Plotly.plot(gd, [{
+                    y: [
+                        '1970-01-01 00:00:00.000',
+                        '1970-01-01 00:00:00.010',
+                        '1970-01-01 00:00:00.050',
+                        '1970-01-01 00:00:00.090',
+                        '1970-01-01 00:00:00.100',
+                        '1970-01-01 00:00:00.150',
+                        '1970-01-01 00:00:00.190',
+                        '1970-01-01 00:00:00.200'
+                    ]
+                }], {
+                    yaxis: {}
+                })
+                .then(function() {
+                    _assert('no set rangebreaks', 'y', null);
+                })
+                .then(function() {
+                    gd.layout.yaxis.rangebreaks = [
+                        {bounds: [
+                            '1970-01-01 00:00:00.011',
+                            '1970-01-01 00:00:00.089'
+                        ]},
+                        {bounds: [
+                            '1970-01-01 00:00:00.101',
+                            '1970-01-01 00:00:00.189'
+                        ]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('2 disjoint rangebreaks within range', 'y', {
+                        rangebreaks: [[101, 189], [11, 89]],
+                        m2: -6.923076923076923,
+                        B: [1401.923, 792.692, 252.692]
+                    });
+                })
+                .then(function() {
+                    gd.layout.yaxis.rangebreaks = [
+                        {bounds: [
+                            '1970-01-01 00:00:00.011',
+                            '1970-01-01 00:00:00.089'
+                        ]},
+                        {bounds: [
+                            '1970-01-01 00:00:00.070',
+                            '1970-01-01 00:00:00.189'
+                        ]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('2 overlapping rangebreaks within range', 'y', {
+                        rangebreaks: [[11, 189]],
+                        m2: -10.714285714283243,
+                        B: [2160, 252.857]
+                    });
+                })
+                .catch(failTest)
+                .then(done);
+            });
+
+            it('should locate rangebreaks & compute l <-> p parameters - date axis case', function(done) {
+                Plotly.plot(gd, [{
+                    x: [
+                        // Thursday
+                        '2020-01-02 08:00', '2020-01-02 17:00',
+                        // Friday
+                        '2020-01-03 08:00', '2020-01-03 17:00',
+                        // Saturday
+                        '2020-01-04 08:00', '2020-01-04 17:00',
+                        // Sunday
+                        '2020-01-05 08:00', '2020-01-05 17:00',
+                        // Monday
+                        '2020-01-06 08:00', '2020-01-06 17:00',
+                        // Tuesday
+                        '2020-01-07 08:00', '2020-01-07 17:00'
+                    ]
+                }], {
+                    xaxis: {}
+                })
+                .then(function() {
+                    _assert('no set rangebreaks', 'x', null);
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'day of week', bounds: [6, 1]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('break over the weekend days', 'x', {
+                        rangebreaks: [
+                            ['2020-01-04', '2020-01-06'].map(Lib.dateTime2ms)
+                        ],
+                        m2: 0.000001640946501588664,
+                        B: [-2589304.064, -2589587.619]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'day of week', bounds: [5, 6]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('skip Friday', 'x', {
+                        rangebreaks: [
+                            ['2020-01-03', '2020-01-04'].map(Lib.dateTime2ms)
+                        ],
+                        m2: 0.0000012658730158736563,
+                        B: [-1997456.107, -1997565.478]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'day of week', bounds: [5, 5]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('bad input -> implied empty rangebreaks', 'x', null);
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'hour', bounds: [17, 8]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('breaks outside workday hours', 'x', {
+                        rangebreaks: [
+                            ['2020-01-02 17:00:00', '2020-01-03 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-03 17:00:00', '2020-01-04 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-04 17:00:00', '2020-01-05 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-05 17:00:00', '2020-01-06 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-06 17:00:00', '2020-01-07 08:00:00'].map(Lib.dateTime2ms)
+                        ],
+                        m2: 0.0000029537037039351,
+                        B: [
+                            -4660771.917031818, -4660931.41703183,
+                            -4661090.917031842, -4661250.417031854,
+                            -4661409.9170318665, -4661569.417031879
+                        ]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'day of week', bounds: [6, 1]},
+                        {pattern: 'hour', bounds: [17, 8]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('breaks outside workday hours & weekends', 'x', {
+                        rangebreaks: [
+                            ['2020-01-02 17:00:00', '2020-01-03 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-03 17:00:00', '2020-01-06 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-06 17:00:00', '2020-01-07 08:00:00'].map(Lib.dateTime2ms)
+                        ],
+                        m2: 0.000004922839504765992,
+                        B: [
+                            -7767973.692224438, -7768239.525557696,
+                            -7769356.025557376, -7769621.858890634
+                        ]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'hour', bounds: [17, 8]},
+                        {pattern: 'day of week', bounds: [6, 1]}
+                    ];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('breaks outside workday hours & weekends (reversed break order)', 'x', {
+                        rangebreaks: [
+                            ['2020-01-02 17:00:00', '2020-01-03 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-03 17:00:00', '2020-01-06 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-06 17:00:00', '2020-01-07 08:00:00'].map(Lib.dateTime2ms)
+                        ],
+                        m2: 0.000004922839504765992,
+                        B: [
+                            -7767973.692224438, -7768239.525557696,
+                            -7769356.025557376, -7769621.858890634
+                        ]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'hour', bounds: [17, 8]}
+                    ];
+                    // N.B. xaxis.range[0] falls within a break
+                    gd.layout.xaxis.autorange = false;
+                    gd.layout.xaxis.range = ['2020-01-01 20:00:00', '2020-01-04 20:00:00'];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('when range[0] falls within a break pattern (hour case)', 'x', {
+                        rangebreaks: [
+                            [1577908800000, Lib.dateTime2ms('2020-01-02 08:00:00')],
+                            ['2020-01-02 17:00:00', '2020-01-03 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-03 17:00:00', '2020-01-04 08:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-04 17:00:00', '2020-01-04 20:00:00'].map(Lib.dateTime2ms)
+                        ],
+                        m2: 0.000005555555555555556,
+                        B: [-8766160, -8766400, -8766700, -8767000, -8767060]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis.rangebreaks = [
+                        {pattern: 'day of week', bounds: [2, 4]}
+                    ];
+                    // N.B. xaxis.range[0] falls within a break
+                    gd.layout.xaxis.autorange = false;
+                    gd.layout.xaxis.range = ['2020-01-01', '2020-01-09'];
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('when range[0] falls within a break pattern (day of week case)', 'x', {
+                        rangebreaks: [
+                            ['2020-01-01 00:00:00', '2020-01-02 00:00:00'].map(Lib.dateTime2ms),
+                            ['2020-01-07 00:00:00', '2020-01-09 00:00:00'].map(Lib.dateTime2ms)
+                        ],
+                        m2: 0.00000125,
+                        B: [-1972296, -1972404, -1972620]
+                    });
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        describe('during calcTicks', function() {
+            var gd;
+
+            beforeEach(function() {
+                gd = createGraphDiv();
+            });
+
+            afterEach(destroyGraphDiv);
+
+            function _assert(msg, exp) {
+                var fullLayout = gd._fullLayout;
+                var xa = fullLayout.xaxis;
+
+                expect(xa._vals.map(function(d) { return d.x; }))
+                    .withContext(msg).toEqual(exp.tickVals);
+            }
+
+            it('should not include requested ticks that fall within rangebreaks', function(done) {
+                Plotly.plot(gd, [{
+                    x: [
+                        '1970-01-01 00:00:00.000',
+                        '1970-01-01 00:00:00.010',
+                        '1970-01-01 00:00:00.050',
+                        '1970-01-01 00:00:00.090',
+                        '1970-01-01 00:00:00.100',
+                        '1970-01-01 00:00:00.150',
+                        '1970-01-01 00:00:00.190',
+                        '1970-01-01 00:00:00.200'
+                    ]
+                }], {
+                    xaxis: {},
+                    width: 800,
+                    height: 400
+                })
+                .then(function() {
+                    _assert('base', {
+                        tickVals: [0, 50, 100, 150, 200]
+                    });
+                })
+                .then(function() {
+                    gd.layout.xaxis = {
+                        rangebreaks: [
+                            {bounds: [
+                                '1970-01-01 00:00:00.011',
+                                '1970-01-01 00:00:00.089'
+                            ]},
+                            {bounds: [
+                                '1970-01-01 00:00:00.101',
+                                '1970-01-01 00:00:00.189'
+                            ]}
+                        ]
+                    };
+                    return Plotly.react(gd, gd.data, gd.layout);
+                })
+                .then(function() {
+                    _assert('with two rangebreaks', {
+                        tickVals: [0, 5, 90, 95, 190, 195, 200]
+                    });
+                })
+                .catch(failTest)
+                .then(done);
+            });
+
+            [true, 'reversed'].forEach(function(autorange) {
+                it('with ' + autorange + ' autorange, should include requested ticks using tick0 and dtick with rangebreaks', function(done) {
+                    var fig = {
+                        data: [{
+                            x: [
+                                '1970-01-01 06:00', '1970-01-01 07:00', '1970-01-01 08:00', '1970-01-01 09:00', '1970-01-01 10:00', '1970-01-01 11:00', '1970-01-01 12:00', '1970-01-01 13:00', '1970-01-01 14:00', '1970-01-01 15:00', '1970-01-01 16:00', '1970-01-01 17:00', '1970-01-01 18:00',
+                                '1970-01-02 06:00', '1970-01-02 07:00', '1970-01-02 08:00', '1970-01-02 09:00', '1970-01-02 10:00', '1970-01-02 11:00', '1970-01-02 12:00', '1970-01-02 13:00', '1970-01-02 14:00', '1970-01-02 15:00', '1970-01-02 16:00', '1970-01-02 17:00', '1970-01-02 18:00',
+                                '1970-01-03 06:00', '1970-01-03 07:00', '1970-01-03 08:00', '1970-01-03 09:00', '1970-01-03 10:00', '1970-01-03 11:00', '1970-01-03 12:00', '1970-01-03 13:00', '1970-01-03 14:00', '1970-01-03 15:00', '1970-01-03 16:00', '1970-01-03 17:00', '1970-01-03 18:00',
+                                '1970-01-04 06:00', '1970-01-04 07:00', '1970-01-04 08:00', '1970-01-04 09:00', '1970-01-04 10:00', '1970-01-04 11:00', '1970-01-04 12:00', '1970-01-04 13:00', '1970-01-04 14:00', '1970-01-04 15:00', '1970-01-04 16:00', '1970-01-04 17:00', '1970-01-04 18:00',
+                                '1970-01-05 06:00', '1970-01-05 07:00', '1970-01-05 08:00', '1970-01-05 09:00', '1970-01-05 10:00', '1970-01-05 11:00', '1970-01-05 12:00', '1970-01-05 13:00', '1970-01-05 14:00', '1970-01-05 15:00', '1970-01-05 16:00', '1970-01-05 17:00', '1970-01-05 18:00',
+                                '1970-01-06 06:00', '1970-01-06 07:00', '1970-01-06 08:00', '1970-01-06 09:00', '1970-01-06 10:00', '1970-01-06 11:00', '1970-01-06 12:00', '1970-01-06 13:00', '1970-01-06 14:00', '1970-01-06 15:00', '1970-01-06 16:00', '1970-01-06 17:00', '1970-01-06 18:00',
+                                '1970-01-07 06:00', '1970-01-07 07:00', '1970-01-07 08:00', '1970-01-07 09:00', '1970-01-07 10:00', '1970-01-07 11:00', '1970-01-07 12:00', '1970-01-07 13:00', '1970-01-07 14:00', '1970-01-07 15:00', '1970-01-07 16:00', '1970-01-07 17:00', '1970-01-07 18:00',
+                                '1970-01-08 06:00', '1970-01-08 07:00', '1970-01-08 08:00', '1970-01-08 09:00', '1970-01-08 10:00', '1970-01-08 11:00', '1970-01-08 12:00', '1970-01-08 13:00', '1970-01-08 14:00', '1970-01-08 15:00', '1970-01-08 16:00', '1970-01-08 17:00', '1970-01-08 18:00',
+                                '1970-01-09 06:00', '1970-01-09 07:00', '1970-01-09 08:00', '1970-01-09 09:00', '1970-01-09 10:00', '1970-01-09 11:00', '1970-01-09 12:00', '1970-01-09 13:00', '1970-01-09 14:00', '1970-01-09 15:00', '1970-01-09 16:00', '1970-01-09 17:00', '1970-01-09 18:00',
+                                '1970-01-10 06:00', '1970-01-10 07:00', '1970-01-10 08:00', '1970-01-10 09:00', '1970-01-10 10:00', '1970-01-10 11:00', '1970-01-10 12:00', '1970-01-10 13:00', '1970-01-10 14:00', '1970-01-10 15:00', '1970-01-10 16:00', '1970-01-10 17:00', '1970-01-10 18:00',
+                                '1970-01-11 06:00', '1970-01-11 07:00', '1970-01-11 08:00', '1970-01-11 09:00', '1970-01-11 10:00', '1970-01-11 11:00', '1970-01-11 12:00', '1970-01-11 13:00', '1970-01-11 14:00', '1970-01-11 15:00', '1970-01-11 16:00', '1970-01-11 17:00', '1970-01-11 18:00',
+                                '1970-01-12 06:00', '1970-01-12 07:00', '1970-01-12 08:00', '1970-01-12 09:00', '1970-01-12 10:00', '1970-01-12 11:00', '1970-01-12 12:00', '1970-01-12 13:00', '1970-01-12 14:00', '1970-01-12 15:00', '1970-01-12 16:00', '1970-01-12 17:00', '1970-01-12 18:00',
+                                '1970-01-13 06:00', '1970-01-13 07:00', '1970-01-13 08:00', '1970-01-13 09:00', '1970-01-13 10:00', '1970-01-13 11:00', '1970-01-13 12:00', '1970-01-13 13:00', '1970-01-13 14:00', '1970-01-13 15:00', '1970-01-13 16:00', '1970-01-13 17:00', '1970-01-13 18:00',
+                                '1970-01-14 06:00', '1970-01-14 07:00', '1970-01-14 08:00', '1970-01-14 09:00', '1970-01-14 10:00', '1970-01-14 11:00', '1970-01-14 12:00', '1970-01-14 13:00', '1970-01-14 14:00', '1970-01-14 15:00', '1970-01-14 16:00', '1970-01-14 17:00', '1970-01-14 18:00'
+                            ]
+                        }],
+                        layout: {
+                            width: 1600,
+                            height: 1600
+                        }
+                    };
+
+                    fig.layout.xaxis = {
+                        autorange: autorange,
+                        tick0: '1970-01-01 08:00',
+                        dtick: 4 * 60 * 60 * 1000,
+                        rangebreaks: [{
+                            bounds: [ 17, 8 ],
+                            pattern: 'hour'
+                        }, {
+                            bounds: [ 6, 1 ],
+                            pattern: 'day of week'
+                        }]
+                    };
+
+                    Plotly.newPlot(gd, fig)
+                    .then(function() {
+                        _assert('base', {
+                            tickVals: [
+                                '1970-01-01 08:00', '1970-01-01 12:00', '1970-01-01 16:00',
+                                '1970-01-02 08:00', '1970-01-02 12:00', '1970-01-02 16:00',
+                                '1970-01-05 08:00', '1970-01-05 12:00', '1970-01-05 16:00',
+                                '1970-01-06 08:00', '1970-01-06 12:00', '1970-01-06 16:00',
+                                '1970-01-07 08:00', '1970-01-07 12:00', '1970-01-07 16:00',
+                                '1970-01-08 08:00', '1970-01-08 12:00', '1970-01-08 16:00',
+                                '1970-01-09 08:00', '1970-01-09 12:00', '1970-01-09 16:00',
+                                '1970-01-12 08:00', '1970-01-12 12:00', '1970-01-12 16:00',
+                                '1970-01-13 08:00', '1970-01-13 12:00', '1970-01-13 16:00',
+                                '1970-01-14 08:00', '1970-01-14 12:00', '1970-01-14 16:00'
+                            ].map(Lib.dateTime2ms)
+                        });
+                    })
+                    .then(function() {
+                        fig.layout.xaxis = {
+                            autorange: autorange,
+                            tick0: '1970-01-01 08:00',
+                            dtick: 3 * 60 * 60 * 1000,
+                            rangebreaks: [{
+                                bounds: [ 17, 8 ],
+                                pattern: 'hour'
+                            }, {
+                                bounds: [ 6, 1 ],
+                                pattern: 'day of week'
+                            }]
+                        };
+                        return Plotly.newPlot(gd, gd.data, gd.layout);
+                    })
+                    .then(function() {
+                        _assert('3-hour dtick', {
+                            tickVals: [
+                                '1970-01-01 08:00', '1970-01-01 11:00', '1970-01-01 14:00',
+                                '1970-01-02 08:00', '1970-01-02 11:00', '1970-01-02 14:00',
+                                '1970-01-05 08:00', '1970-01-05 11:00', '1970-01-05 14:00',
+                                '1970-01-06 08:00', '1970-01-06 11:00', '1970-01-06 14:00',
+                                '1970-01-07 08:00', '1970-01-07 11:00', '1970-01-07 14:00',
+                                '1970-01-08 08:00', '1970-01-08 11:00', '1970-01-08 14:00',
+                                '1970-01-09 08:00', '1970-01-09 11:00', '1970-01-09 14:00',
+                                '1970-01-12 08:00', '1970-01-12 11:00', '1970-01-12 14:00',
+                                '1970-01-13 08:00', '1970-01-13 11:00', '1970-01-13 14:00',
+                                '1970-01-14 08:00', '1970-01-14 11:00', '1970-01-14 14:00'
+                            ].map(Lib.dateTime2ms)
+                        });
+                    })
+                    .then(function() {
+                        fig.layout.xaxis = {
+                            autorange: autorange,
+                            tick0: '1970-01-01 08:00',
+                            dtick: 2 * 60 * 60 * 1000,
+                            rangebreaks: [{
+                                bounds: [ 17, 8 ],
+                                pattern: 'hour'
+                            }, {
+                                bounds: [ 6, 1 ],
+                                pattern: 'day of week'
+                            }]
+                        };
+                        return Plotly.newPlot(gd, gd.data, gd.layout);
+                    })
+                    .then(function() {
+                        _assert('2-hour dtick', {
+                            tickVals: [
+                                '1970-01-01 08:00', '1970-01-01 10:00', '1970-01-01 12:00', '1970-01-01 14:00', '1970-01-01 16:00',
+                                '1970-01-02 08:00', '1970-01-02 10:00', '1970-01-02 12:00', '1970-01-02 14:00', '1970-01-02 16:00',
+                                '1970-01-05 08:00', '1970-01-05 10:00', '1970-01-05 12:00', '1970-01-05 14:00', '1970-01-05 16:00',
+                                '1970-01-06 08:00', '1970-01-06 10:00', '1970-01-06 12:00', '1970-01-06 14:00', '1970-01-06 16:00',
+                                '1970-01-07 08:00', '1970-01-07 10:00', '1970-01-07 12:00', '1970-01-07 14:00', '1970-01-07 16:00',
+                                '1970-01-08 08:00', '1970-01-08 10:00', '1970-01-08 12:00', '1970-01-08 14:00', '1970-01-08 16:00',
+                                '1970-01-09 08:00', '1970-01-09 10:00', '1970-01-09 12:00', '1970-01-09 14:00', '1970-01-09 16:00',
+                                '1970-01-12 08:00', '1970-01-12 10:00', '1970-01-12 12:00', '1970-01-12 14:00', '1970-01-12 16:00',
+                                '1970-01-13 08:00', '1970-01-13 10:00', '1970-01-13 12:00', '1970-01-13 14:00', '1970-01-13 16:00',
+                                '1970-01-14 08:00', '1970-01-14 10:00', '1970-01-14 12:00', '1970-01-14 14:00', '1970-01-14 16:00'
+                            ].map(Lib.dateTime2ms)
+                        });
+                    })
+                    .catch(failTest)
+                    .then(done);
+                });
+            });
+        });
+
+        it('should set visible:false in scattergl traces on axis with rangebreaks', function(done) {
+            var gd = createGraphDiv();
+
+            spyOn(Lib, 'warn');
+
+            Plotly.plot(gd, [{
+                type: 'scattergl',
+                x: [
+                    '2020-01-02 08:00', '2020-01-02 17:00',
+                    '2020-01-03 08:00', '2020-01-03 17:00',
+                    '2020-01-04 08:00', '2020-01-04 17:00',
+                    '2020-01-05 08:00', '2020-01-05 17:00',
+                    '2020-01-06 08:00', '2020-01-06 17:00',
+                    '2020-01-07 08:00', '2020-01-07 17:00'
+                ]
+            }], {
+                xaxis: {
+                    rangebreaks: [{pattern: 'hour', bounds: [17, 8]}]
+                }
+            })
+            .then(function() {
+                expect(gd._fullData[0].visible).toBe(false, 'sets visible:false');
+                expect(Lib.warn).toHaveBeenCalledTimes(1);
+                expect(Lib.warn).toHaveBeenCalledWith('scattergl traces do not work on axes with rangebreaks. Setting trace 0 to `visible: false`.');
+            })
+            .catch(failTest)
+            .then(function() {
+                destroyGraphDiv();
+                done();
+            });
+        });
+    });
+
+    describe('label positioning using *ticklabelmode*: "period"', function() {
+        var hovertemplate = 'x:%{x|%x %X}'; // to make debugging easier
+        var gd;
+
+        beforeEach(function() {
+            gd = createGraphDiv();
+        });
+
+        afterEach(destroyGraphDiv);
+
+        function _assert(msg, expPositions, expLabels) {
+            var ax = gd._fullLayout.xaxis;
+
+            var positions = ax._vals.map(function(d) { return ax.c2d(d.periodX); });
+            expect(positions).withContext(msg).toEqual(expPositions);
+
+            var labels = ax._vals.map(function(d) { return d.text; });
+            expect(labels).withContext(msg).toEqual(expLabels);
+        }
+
+        ['%Y', '%y'].forEach(function(formatter, i) {
+            it('should respect yearly tickformat that includes ' + formatter, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: ['2020-01-01', '2026-01-01']
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            tickformat: formatter
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', [
+                        '2019-07-02 12:00',
+                        '2020-07-02',
+                        '2021-07-02 12:00',
+                        '2022-07-02 12:00',
+                        '2023-07-02 12:00',
+                        '2024-07-02',
+                        '2025-07-02 12:00',
+                        '2026-07-02 12:00'
+                    ], [
+                        [' ', '2020', '2021', '2022', '2023', '2024', '2025', ' '],
+                        [' ', '20', '21', '22', '23', '24', '25', ' ']
+                    ][i]);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        it('should respect quarters tickformat that includes %q', function(done) {
+            Plotly.newPlot(gd, {
+                data: [{
+                    hovertemplate: hovertemplate,
+                    x: ['2020-01-01', '2022-01-01']
+                }],
+                layout: {
+                    width: 1000,
+                    xaxis: {
+                        ticklabelmode: 'period',
+                        tickformat: '%Y-Q%q'
+                    }
+                }
+            })
+            .then(function() {
+                _assert('', [
+                    '2019-11-16',
+                    '2020-02-15 12:00',
+                    '2020-05-16 12:00',
+                    '2020-08-16',
+                    '2020-11-16',
+                    '2021-02-15',
+                    '2021-05-16 12:00',
+                    '2021-08-16',
+                    '2021-11-16',
+                    '2022-02-16'
+                ], [' ', '2020-Q1', '2020-Q2', '2020-Q3', '2020-Q4', '2021-Q1', '2021-Q2', '2021-Q3', '2021-Q4', ' ']);
+            })
+            .catch(failTest)
+            .then(done);
+        });
+
+        it('should position quarters - case of dtick set to M6', function(done) {
+            Plotly.newPlot(gd, {
+                data: [{
+                    hovertemplate: hovertemplate,
+                    x: ['2020-01-01', '2022-01-01']
+                }],
+                layout: {
+                    width: 1000,
+                    xaxis: {
+                        dtick: 'M6',
+                        ticklabelmode: 'period',
+                        tickformat: '%Y-Q%q'
+                    }
+                }
+            })
+            .then(function() {
+                _assert('', [
+                    '2019-08-15 15:45',
+                    '2020-02-15 15:45',
+                    '2020-08-15 15:45',
+                    '2021-02-15 15:45',
+                    '2021-08-15 15:45',
+                    '2022-02-15 15:45'
+                ], [' ', '2020-Q1', '2020-Q3', '2021-Q1', '2021-Q3', ' ']);
+            })
+            .catch(failTest)
+            .then(done);
+        });
+
+        ['%B', '%b', '%m'].forEach(function(formatter, i) {
+            it('should respect monthly tickformat that includes ' + formatter, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: ['2020-01-01', '2020-07-01']
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            tickformat: 'Q%q-' + formatter
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', [
+                        '2019-12-16 12:00',
+                        '2020-01-16 12:00',
+                        '2020-02-15 12:00',
+                        '2020-03-16 12:00',
+                        '2020-04-16',
+                        '2020-05-16 12:00',
+                        '2020-06-16',
+                        '2020-07-16'
+                    ], [
+                        [' ', 'Q1-January', 'Q1-February', 'Q1-March', 'Q2-April', 'Q2-May', 'Q2-June', ' '],
+                        [' ', 'Q1-Jan', 'Q1-Feb', 'Q1-Mar', 'Q2-Apr', 'Q2-May', 'Q2-Jun', ' '],
+                        [' ', 'Q1-01', 'Q1-02', 'Q1-03', 'Q2-04', 'Q2-05', 'Q2-06', ' ']
+                    ][i]);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        it('should respect Sunday-based week tickformat that includes %U', function(done) {
+            Plotly.newPlot(gd, {
+                data: [{
+                    hovertemplate: hovertemplate,
+                    x: ['2020-02-01', '2020-04-01']
+                }],
+                layout: {
+                    width: 1000,
+                    xaxis: {
+                        ticklabelmode: 'period',
+                        tickformat: '%b-W%U'
+                    }
+                }
+            })
+            .then(function() {
+                _assert('', [
+                    '2020-01-29 12:00',
+                    '2020-02-05 12:00',
+                    '2020-02-12 12:00',
+                    '2020-02-19 12:00',
+                    '2020-02-26 12:00',
+                    '2020-03-04 12:00',
+                    '2020-03-11 12:00',
+                    '2020-03-18 12:00',
+                    '2020-03-25 12:00',
+                    '2020-04-01 12:00'
+                ], ['Jan-W04', 'Feb-W05', 'Feb-W06', 'Feb-W07', 'Feb-W08', 'Mar-W09', 'Mar-W10', 'Mar-W11', 'Mar-W12', 'Mar-W13']);
+            })
+            .catch(failTest)
+            .then(done);
+        });
+
+        ['%V', '%W'].forEach(function(formatter, i) {
+            it('should respect Monday-based week tickformat that includes ' + formatter, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: ['2020-02-01', '2020-04-01']
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            tickformat: '%b-W' + formatter
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', [
+                        '2020-01-30 12:00',
+                        '2020-02-06 12:00',
+                        '2020-02-13 12:00',
+                        '2020-02-20 12:00',
+                        '2020-02-27 12:00',
+                        '2020-03-05 12:00',
+                        '2020-03-12 12:00',
+                        '2020-03-19 12:00',
+                        '2020-03-26 12:00',
+                        '2020-04-02 12:00'
+                    ], [
+                        ['Jan-W05', 'Feb-W06', 'Feb-W07', 'Feb-W08', 'Feb-W09', 'Mar-W10', 'Mar-W11', 'Mar-W12', 'Mar-W13', 'Mar-W14'],
+                        ['Jan-W04', 'Feb-W05', 'Feb-W06', 'Feb-W07', 'Feb-W08', 'Mar-W09', 'Mar-W10', 'Mar-W11', 'Mar-W12', 'Mar-W13']
+                    ][i]);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        ['%U', '%V', '%W'].forEach(function(formatter, i) {
+            it('should move weekly labels by one day (i.e. to help center the labels) when *day of week* rangebreak is present', function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: [
+                            '2020-01-01',
+                            '2020-01-02',
+                            '2020-01-03',
+                            '2020-01-04',
+                            '2020-01-05',
+                            '2020-01-06',
+                            '2020-01-07',
+                            '2020-01-08',
+                            '2020-01-09',
+                            '2020-01-10',
+                            '2020-01-11',
+                            '2020-01-12',
+                            '2020-01-13',
+                            '2020-01-14',
+                            '2020-01-15',
+                            '2020-01-16',
+                            '2020-01-17',
+                            '2020-01-18',
+                            '2020-01-19',
+                            '2020-01-20',
+                            '2020-01-21',
+                            '2020-01-22',
+                            '2020-01-23',
+                            '2020-01-24',
+                            '2020-01-25',
+                            '2020-01-26',
+                            '2020-01-27',
+                            '2020-01-28',
+                            '2020-01-29',
+                            '2020-01-30',
+                            '2020-01-31'
+                        ]
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            rangebreaks: [{bounds: ['sat', 'mon']}],
+                            ticklabelmode: 'period',
+                            tickformat: '%b-W' + formatter
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', [
+                        ['2019-12-31 04:00', '2020-01-08 12:00', '2020-01-15 12:00', '2020-01-22 12:00', '2020-01-29 12:00'],
+                        ['2020-01-01 12:00', '2020-01-08 12:00', '2020-01-15 12:00', '2020-01-22 12:00', '2020-01-29 12:00'],
+                        ['2020-01-01 12:00', '2020-01-08 12:00', '2020-01-15 12:00', '2020-01-22 12:00', '2020-01-29 12:00']
+                    ][i], [
+                        [' ', 'Jan-W01', 'Jan-W02', 'Jan-W03', 'Jan-W04'],
+                        ['Dec-W01', 'Jan-W02', 'Jan-W03', 'Jan-W04', 'Jan-W05'],
+                        ['Dec-W52', 'Jan-W01', 'Jan-W02', 'Jan-W03', 'Jan-W04']
+                    ][i]);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        ['%A', '%a', '%d', '%e', '%j', '%u', '%w', '%x'].forEach(function(formatter, i) {
+            it('should respect daily tickformat that includes ' + formatter, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: ['2020-01-01', '2020-01-08']
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            tickformat: '%b-' + formatter
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', [
+                        '2019-12-31 12:00',
+                        '2020-01-01 12:00',
+                        '2020-01-02 12:00',
+                        '2020-01-03 12:00',
+                        '2020-01-04 12:00',
+                        '2020-01-05 12:00',
+                        '2020-01-06 12:00',
+                        '2020-01-07 12:00',
+                        '2020-01-08 12:00'
+                    ], [
+                        [' ', 'Jan-Wednesday', 'Jan-Thursday', 'Jan-Friday', 'Jan-Saturday', 'Jan-Sunday', 'Jan-Monday', 'Jan-Tuesday', ' '],
+                        [' ', 'Jan-Wed', 'Jan-Thu', 'Jan-Fri', 'Jan-Sat', 'Jan-Sun', 'Jan-Mon', 'Jan-Tue', ' '],
+                        [' ', 'Jan-01', 'Jan-02', 'Jan-03', 'Jan-04', 'Jan-05', 'Jan-06', 'Jan-07', ' '],
+                        [' ', 'Jan- 1', 'Jan- 2', 'Jan- 3', 'Jan- 4', 'Jan- 5', 'Jan- 6', 'Jan- 7', ' '],
+                        [' ', 'Jan-001', 'Jan-002', 'Jan-003', 'Jan-004', 'Jan-005', 'Jan-006', 'Jan-007', ' '],
+                        [' ', 'Jan-3', 'Jan-4', 'Jan-5', 'Jan-6', 'Jan-7', 'Jan-1', 'Jan-2', ' '],
+                        [' ', 'Jan-3', 'Jan-4', 'Jan-5', 'Jan-6', 'Jan-0', 'Jan-1', 'Jan-2', ' '],
+                        [' ', 'Jan-01/01/2020', 'Jan-01/02/2020', 'Jan-01/03/2020', 'Jan-01/04/2020', 'Jan-01/05/2020', 'Jan-01/06/2020', 'Jan-01/07/2020', ' ']
+                    ][i]);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        ['%Q', '%s', '%X'].forEach(function(formatter, i) {
+            it('should respect daily tickformat that includes ' + formatter, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: ['2020-01-01', '2020-01-02']
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            tickformat: '%a-' + formatter
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', [
+                        '2019-12-31 21:00',
+                        '2020-01-01',
+                        '2020-01-01 03:00',
+                        '2020-01-01 06:00',
+                        '2020-01-01 09:00',
+                        '2020-01-01 12:00',
+                        '2020-01-01 15:00',
+                        '2020-01-01 18:00',
+                        '2020-01-01 21:00',
+                        '2020-01-02'
+                    ], [
+                        [' ', 'Wed-1577836800000', 'Wed-1577847600000', 'Wed-1577858400000', 'Wed-1577869200000', 'Wed-1577880000000', 'Wed-1577890800000', 'Wed-1577901600000', 'Wed-1577912400000', 'Thu-1577923200000'],
+                        [' ', 'Wed-1577836800', 'Wed-1577847600', 'Wed-1577858400', 'Wed-1577869200', 'Wed-1577880000', 'Wed-1577890800', 'Wed-1577901600', 'Wed-1577912400', 'Thu-1577923200'],
+                        [' ', 'Wed-00:00:00', 'Wed-03:00:00', 'Wed-06:00:00', 'Wed-09:00:00', 'Wed-12:00:00', 'Wed-15:00:00', 'Wed-18:00:00', 'Wed-21:00:00', 'Thu-00:00:00']
+                    ][i]);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+
+        [
+            {
+                formatter: '%H',
+                positions: ['2019-12-31 21:30', '2020-01-01 00:30', '2020-01-01 03:30', '2020-01-01 06:30', '2020-01-01 09:30', '2020-01-01 12:30', '2020-01-01 15:30', '2020-01-01 18:30', '2020-01-01 21:30', '2020-01-02 00:30'],
+                labels: [' ', 'Wed-00', 'Wed-03', 'Wed-06', 'Wed-09', 'Wed-12', 'Wed-15', 'Wed-18', 'Wed-21', 'Thu-00']
+            },
+            {
+                formatter: '%I',
+                positions: ['2019-12-31 21:30', '2020-01-01 00:30', '2020-01-01 03:30', '2020-01-01 06:30', '2020-01-01 09:30', '2020-01-01 12:30', '2020-01-01 15:30', '2020-01-01 18:30', '2020-01-01 21:30', '2020-01-02 00:30'],
+                labels: [' ', 'Wed-12', 'Wed-03', 'Wed-06', 'Wed-09', 'Wed-12', 'Wed-03', 'Wed-06', 'Wed-09', 'Thu-12']
+            },
+            {
+                formatter: '%p',
+                positions: ['2019-12-31 21:00', '2020-01-01 06:00', '2020-01-01 18:00', '2020-01-02 06:00'],
+                labels: [' ', 'Wed-AM', 'Wed-PM', ' ']
+            },
+            {
+                formatter: '%M',
+                positions: ['2019-12-31 21:00', '2020-01-01 12:00', '2020-01-02 12:00'],
+                labels: [' ', 'Wed-00', ' ']
+            },
+            {
+                formatter: '%S',
+                positions: ['2019-12-31 21:00', '2020-01-01 12:00', '2020-01-02 12:00'],
+                labels: [' ', 'Wed-00', ' ']
+            },
+            {
+                formatter: '%L',
+                positions: ['2019-12-31 21:00', '2020-01-01 12:00', '2020-01-02 12:00'],
+                labels: [' ', 'Wed-000', ' ']
+            },
+            {
+                formatter: '%f',
+                positions: ['2019-12-31 21:00', '2020-01-01 12:00', '2020-01-02 12:00'],
+                labels: [' ', 'Wed-0', ' ']
+            }
+        ].forEach(function(t) {
+            it('should respect time tickformat that includes ' + t.formatter, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: ['2020-01-01', '2020-01-02']
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            tickformat: '%a-' + t.formatter
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', t.positions, t.labels);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        [
+            {
+                range: ['2020-12-15', '2084-12-15'],
+                positions: ['2020-07-01 15:00', '2030-07-02 15:00', '2040-07-01 15:00', '2050-07-02 15:00', '2060-07-01 15:00', '2070-07-02 15:00', '2080-07-01 15:00'],
+                labels: [' ', '2030', '2040', '2050', '2060', '2070', '2080']
+            },
+            {
+                range: ['2020-12-15', '2052-12-15'],
+                positions: ['2020-07-01 15:00', '2025-07-02 15:00', '2030-07-02 15:00', '2035-07-02 15:00', '2040-07-01 15:00', '2045-07-02 15:00', '2050-07-02 15:00'],
+                labels: [' ', '2025', '2030', '2035', '2040', '2045', '2050']
+            },
+            {
+                range: ['2020-12-15', '2036-12-15'],
+                positions: ['2020-07-01 15:00', '2022-07-02 15:00', '2024-07-01 15:00', '2026-07-02 15:00', '2028-07-01 15:00', '2030-07-02 15:00', '2032-07-01 15:00', '2034-07-02 15:00', '2036-07-01 15:00'],
+                labels: [' ', '2022', '2024', '2026', '2028', '2030', '2032', '2034', '2036']
+            },
+            {
+                range: ['2020-12-15', '2028-12-15'],
+                positions: ['2020-07-02', '2021-07-02 12:00', '2022-07-02 12:00', '2023-07-02 12:00', '2024-07-02', '2025-07-02 12:00', '2026-07-02 12:00', '2027-07-02 12:00', '2028-07-01 12:00'],
+                labels: [' ', '2021', '2022', '2023', '2024', '2025', '2026', '2027', '2028']
+            },
+            {
+                range: ['2020-12-15', '2024-12-15'],
+                positions: ['2020-07-16 05:15', '2021-01-16 05:15', '2021-07-16 05:15', '2022-01-16 05:15', '2022-07-16 05:15', '2023-01-16 05:15', '2023-07-16 05:15', '2024-01-16 05:15', '2024-07-16 05:15'],
+                labels: [' ', 'Jan 2021', 'Jul 2021', 'Jan 2022', 'Jul 2022', 'Jan 2023', 'Jul 2023', 'Jan 2024', 'Jul 2024']
+            },
+            {
+                range: ['2020-12-15', '2022-12-15'],
+                positions: ['2020-10-16 05:15', '2021-01-16 05:15', '2021-04-16 05:15', '2021-07-16 05:15', '2021-10-16 05:15', '2022-01-16 05:15', '2022-04-16 05:15', '2022-07-16 05:15', '2022-10-16 05:15'],
+                labels: [' ', 'Jan 2021', 'Apr 2021', 'Jul 2021', 'Oct 2021', 'Jan 2022', 'Apr 2022', 'Jul 2022', 'Oct 2022']
+            },
+            {
+                range: ['2020-12-15', '2021-12-15'],
+                positions: ['2020-11-16 05:15', '2021-01-16 05:15', '2021-03-16 05:15', '2021-05-16 05:15', '2021-07-16 05:15', '2021-09-16 05:15', '2021-11-16 05:15'],
+                labels: [' ', 'Jan 2021', 'Mar 2021', 'May 2021', 'Jul 2021', 'Sep 2021', 'Nov 2021']
+            },
+            {
+                range: ['2020-12-15', '2021-06-15'],
+                positions: ['2020-12-16 12:00', '2021-01-16 12:00', '2021-02-15', '2021-03-16 12:00', '2021-04-16', '2021-05-16 12:00', '2021-06-16 12:00'],
+                labels: ['Dec 2020', 'Jan 2021', 'Feb 2021', 'Mar 2021', 'Apr 2021', 'May 2021', ' ']
+            },
+            {
+                range: ['2020-12-15', '2021-02-15'],
+                positions: ['2020-12-13 12:00', '2020-12-20 12:00', '2020-12-27 12:00', '2021-01-03 12:00', '2021-01-10 12:00', '2021-01-17 12:00', '2021-01-24 12:00', '2021-01-31 12:00', '2021-02-07 12:00', '2021-02-14 12:00'],
+                labels: [' ', 'Dec 20<br>2020', 'Dec 27', 'Jan 3<br>2021', 'Jan 10', 'Jan 17', 'Jan 24', 'Jan 31', 'Feb 7', 'Feb 14']
+            },
+            {
+                range: ['2020-12-15', '2021-01-15'],
+                positions: ['2020-12-13 12:00', '2020-12-20 12:00', '2020-12-27 12:00', '2021-01-03 12:00', '2021-01-10 12:00'],
+                labels: [' ', 'Dec 20<br>2020', 'Dec 27', 'Jan 3<br>2021', 'Jan 10']
+            },
+            {
+                range: ['2020-12-15', '2021-01-01'],
+                positions: ['2020-12-14 12:00', '2020-12-16 12:00', '2020-12-18 12:00', '2020-12-20 12:00', '2020-12-22 12:00', '2020-12-24 12:00', '2020-12-26 12:00', '2020-12-28 12:00', '2020-12-30 12:00', '2021-01-01 12:00'],
+                labels: [' ', 'Dec 16<br>2020', 'Dec 18', 'Dec 20', 'Dec 22', 'Dec 24', 'Dec 26', 'Dec 28', 'Dec 30', ' ']
+            },
+            {
+                range: ['2020-12-15', '2020-12-21'],
+                positions: ['2020-12-14 12:00', '2020-12-15 12:00', '2020-12-16 12:00', '2020-12-17 12:00', '2020-12-18 12:00', '2020-12-19 12:00', '2020-12-20 12:00', '2020-12-21 12:00'],
+                labels: [' ', 'Dec 15<br>2020', 'Dec 16', 'Dec 17', 'Dec 18', 'Dec 19', 'Dec 20', ' ']
+            },
+            {
+                range: ['2020-12-15', '2020-12-16'],
+                positions: ['2020-12-14 21:00', '2020-12-15', '2020-12-15 03:00', '2020-12-15 06:00', '2020-12-15 09:00', '2020-12-15 12:00', '2020-12-15 15:00', '2020-12-15 18:00', '2020-12-15 21:00', '2020-12-16'],
+                labels: [' ', '00:00<br>Dec 15, 2020', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '00:00<br>Dec 16, 2020']
+            },
+            {
+                range: ['2020-12-15', '2020-12-15 12:00'],
+                positions: ['2020-12-14 22:00', '2020-12-15', '2020-12-15 02:00', '2020-12-15 04:00', '2020-12-15 06:00', '2020-12-15 08:00', '2020-12-15 10:00', '2020-12-15 12:00'],
+                labels: [' ', '00:00<br>Dec 15, 2020', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00']
+            }
+        ].forEach(function(t) {
+            it('should position auto labels | range:' + t.range, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: [
+                            '2020-12-15',
+                            '2020-12-15 0:45',
+                            '2020-12-15 1:30',
+                            '2020-12-15 3:00',
+                            '2020-12-15 6:00',
+                            '2020-12-15 12:00',
+                            '2020-12-16',
+                            '2020-12-18',
+                            '2020-12-24',
+                            '2021-01-01',
+                            '2021-01-15',
+                            '2021-02-15',
+                            '2021-03-15',
+                            '2021-04-15',
+                            '2021-05-15',
+                            '2021-06-15',
+                            '2021-07-01',
+                            '2022-07-01',
+                            '2023-07-01',
+                            '2024-07-01',
+                            '2025-07-01',
+                            '2030-07-01',
+                            '2035-07-01',
+                            '2040-07-01',
+                            '2080-07-01',
+                            '2160-07-01'
+                        ]
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            range: t.range
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', t.positions, t.labels);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        [
+            {
+                range: ['2084-12-15', '2020-12-15'],
+                positions: ['2090-07-02 15:00', '2080-07-01 15:00', '2070-07-02 15:00', '2060-07-01 15:00', '2050-07-02 15:00', '2040-07-01 15:00', '2030-07-02 15:00'],
+                labels: [' ', '2080', '2070', '2060', '2050', '2040', '2030']
+            },
+            {
+                range: ['2052-12-15', '2020-12-15'],
+                positions: ['2055-07-02 15:00', '2050-07-02 15:00', '2045-07-02 15:00', '2040-07-01 15:00', '2035-07-02 15:00', '2030-07-02 15:00', '2025-07-02 15:00'],
+                labels: [' ', '2050', '2045', '2040', '2035', '2030', '2025']
+            },
+            {
+                range: ['2036-12-15', '2020-12-15'],
+                positions: ['2038-07-02 15:00', '2036-07-01 15:00', '2034-07-02 15:00', '2032-07-01 15:00', '2030-07-02 15:00', '2028-07-01 15:00', '2026-07-02 15:00', '2024-07-01 15:00', '2022-07-02 15:00'],
+                labels: [' ', '2036', '2034', '2032', '2030', '2028', '2026', '2024', '2022']
+            },
+            {
+                range: ['2028-12-15', '2020-12-15'],
+                positions: ['2029-07-03', '2028-07-01 12:00', '2027-07-02 12:00', '2026-07-02 12:00', '2025-07-03', '2024-07-01 12:00', '2023-07-02 12:00', '2022-07-02 12:00', '2021-07-02 12:00'],
+                labels: [' ', '2028', '2027', '2026', '2025', '2024', '2023', '2022', '2021']
+            },
+            {
+                range: ['2024-12-15', '2020-12-15'],
+                positions: ['2025-01-16 05:15', '2024-07-16 05:15', '2024-01-16 05:15', '2023-07-16 05:15', '2023-01-16 05:15', '2022-07-16 05:15', '2022-01-16 05:15', '2021-07-16 05:15', '2021-01-16 05:15'],
+                labels: [' ', 'Jul 2024', 'Jan 2024', 'Jul 2023', 'Jan 2023', 'Jul 2022', 'Jan 2022', 'Jul 2021', 'Jan 2021']
+            },
+            {
+                range: ['2022-12-15', '2020-12-15'],
+                positions: ['2023-01-16 05:15', '2022-10-16 05:15', '2022-07-16 05:15', '2022-04-16 05:15', '2022-01-16 05:15', '2021-10-16 05:15', '2021-07-16 05:15', '2021-04-16 05:15', '2021-01-16 05:15'],
+                labels: [' ', 'Oct 2022', 'Jul 2022', 'Apr 2022', 'Jan 2022', 'Oct 2021', 'Jul 2021', 'Apr 2021', 'Jan 2021']
+            },
+            {
+                range: ['2021-12-15', '2020-12-15'],
+                positions: ['2022-01-16 05:15', '2021-11-16 05:15', '2021-09-16 05:15', '2021-07-16 05:15', '2021-05-16 05:15', '2021-03-16 05:15', '2021-01-16 05:15'],
+                labels: [' ', 'Nov 2021', 'Sep 2021', 'Jul 2021', 'May 2021', 'Mar 2021', 'Jan 2021']
+            },
+            {
+                range: ['2021-06-15', '2020-12-15'],
+                positions: ['2021-07-16', '2021-06-16 12:00', '2021-05-16', '2021-04-16 12:00', '2021-03-15', '2021-02-16 12:00', '2021-01-16 12:00'],
+                labels: [' ', ' ', 'May 2021', 'Apr 2021', 'Mar 2021', 'Feb 2021', 'Jan 2021']
+            },
+            {
+                range: ['2021-02-15', '2020-12-15'],
+                positions: ['2021-02-21 12:00', '2021-02-14 12:00', '2021-02-07 12:00', '2021-01-31 12:00', '2021-01-24 12:00', '2021-01-17 12:00', '2021-01-10 12:00', '2021-01-03 12:00', '2020-12-27 12:00', '2020-12-20 12:00'],
+                labels: [' ', 'Feb 14<br>2021', 'Feb 7', 'Jan 31', 'Jan 24', 'Jan 17', 'Jan 10', 'Jan 3', 'Dec 27<br>2020', 'Dec 20']
+            },
+            {
+                range: ['2021-01-15', '2020-12-15'],
+                positions: ['2021-01-17 12:00', '2021-01-10 12:00', '2021-01-03 12:00', '2020-12-27 12:00', '2020-12-20 12:00'],
+                labels: [' ', 'Jan 10<br>2021', 'Jan 3', 'Dec 27<br>2020', 'Dec 20']
+            },
+            {
+                range: ['2021-01-01', '2020-12-15'],
+                positions: ['2021-01-03 12:00', '2021-01-01 12:00', '2020-12-30 12:00', '2020-12-28 12:00', '2020-12-26 12:00', '2020-12-24 12:00', '2020-12-22 12:00', '2020-12-20 12:00', '2020-12-18 12:00', '2020-12-16 12:00'],
+                labels: [' ', ' ', 'Dec 30<br>2020', 'Dec 28', 'Dec 26', 'Dec 24', 'Dec 22', 'Dec 20', 'Dec 18', 'Dec 16']
+            },
+            {
+                range: ['2020-12-21', '2020-12-15'],
+                positions: ['2020-12-22 12:00', '2020-12-21 12:00', '2020-12-20 12:00', '2020-12-19 12:00', '2020-12-18 12:00', '2020-12-17 12:00', '2020-12-16 12:00', '2020-12-15 12:00'],
+                labels: [' ', ' ', 'Dec 20<br>2020', 'Dec 19', 'Dec 18', 'Dec 17', 'Dec 16', 'Dec 15']
+            },
+            {
+                range: ['2020-12-16', '2020-12-15'],
+                positions: ['2020-12-16 03:00', '2020-12-16', '2020-12-15 21:00', '2020-12-15 18:00', '2020-12-15 15:00', '2020-12-15 12:00', '2020-12-15 09:00', '2020-12-15 06:00', '2020-12-15 03:00', '2020-12-15'],
+                labels: [' ', '00:00<br>Dec 16, 2020', '21:00<br>Dec 15, 2020', '18:00', '15:00', '12:00', '09:00', '06:00', '03:00', '00:00']
+            },
+            {
+                range: ['2020-12-15 12:00', '2020-12-15'],
+                positions: ['2020-12-15 14:00', '2020-12-15 12:00', '2020-12-15 10:00', '2020-12-15 08:00', '2020-12-15 06:00', '2020-12-15 04:00', '2020-12-15 02:00', '2020-12-15'],
+                labels: [' ', '12:00<br>Dec 15, 2020', '10:00', '08:00', '06:00', '04:00', '02:00', '00:00']
+            }
+        ].forEach(function(t) {
+            it('should position auto labels | reversed range:' + t.range, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: [
+                            '2020-12-15',
+                            '2020-12-15 0:45',
+                            '2020-12-15 1:30',
+                            '2020-12-15 3:00',
+                            '2020-12-15 6:00',
+                            '2020-12-15 12:00',
+                            '2020-12-16',
+                            '2020-12-18',
+                            '2020-12-24',
+                            '2021-01-01',
+                            '2021-01-15',
+                            '2021-02-15',
+                            '2021-03-15',
+                            '2021-04-15',
+                            '2021-05-15',
+                            '2021-06-15',
+                            '2021-07-01',
+                            '2022-07-01',
+                            '2023-07-01',
+                            '2024-07-01',
+                            '2025-07-01',
+                            '2030-07-01',
+                            '2035-07-01',
+                            '2040-07-01',
+                            '2080-07-01',
+                            '2160-07-01'
+                        ]
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            ticklabelmode: 'period',
+                            range: t.range
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', t.positions, t.labels);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+
+        [
+            {
+                range: ['2020-12-14 08:00', '2022-12-14 08:00'],
+                positions: ['2020-12-06 10:26:47.1429', '2021-03-07 09:50:21.4286', '2021-06-06 16:26:47.1429', '2021-09-06 16:26:47.1429', '2021-12-07 09:50:21.4286', '2022-03-06 16:26:47.1429', '2022-06-06 16:26:47.1429', '2022-09-07 01:08:34.2857', '2022-12-07 01:08:34.2857'],
+                labels: [' ', 'Mar 2021', 'Jun 2021', 'Sep 2021', 'Dec 2021', 'Mar 2022', 'Jun 2022', 'Sep 2022', 'Dec 2022']
+            },
+            {
+                range: ['2020-12-14 08:00', '2021-08-14 08:00'],
+                positions: ['2020-12-06 04:17:08.5714', '2020-12-27 22:00', '2021-01-24 22:00', '2021-02-21 22:00', '2021-03-21 22:00', '2021-04-18 22:00', '2021-05-16 22:00', '2021-06-13 22:00', '2021-07-11 22:00', '2021-08-08 22:00'],
+                labels: [' ', 'Dec 21<br>2020', 'Jan 18<br>2021', 'Feb 15', 'Mar 15', 'Apr 12', 'May 10', 'Jun 7', 'Jul 5', 'Aug 2']
+            },
+            {
+                range: ['2020-12-14 08:00', '2021-04-14 08:00'],
+                positions: ['2020-12-13 03:42:51.4286', '2020-12-21 11:42:51.4286', '2021-01-04 11:42:51.4286', '2021-01-18 11:42:51.4286', '2021-02-01 11:42:51.4286', '2021-02-15 11:42:51.4286', '2021-03-01 11:42:51.4286', '2021-03-15 11:42:51.4286', '2021-03-29 11:42:51.4286', '2021-04-12 11:42:51.4286'],
+                labels: [' ', 'Dec 21<br>2020', 'Jan 4<br>2021', 'Jan 18', 'Feb 1', 'Feb 15', 'Mar 1', 'Mar 15', 'Mar 29', 'Apr 12']
+            },
+            {
+                range: ['2020-12-14 08:00', '2021-02-14 08:00'],
+                positions: ['2020-12-13 03:42:51.4286', '2020-12-21 10:17:08.5714', '2020-12-28 10:17:08.5714', '2021-01-04 10:17:08.5714', '2021-01-11 10:17:08.5714', '2021-01-18 10:17:08.5714', '2021-01-25 10:17:08.5714', '2021-02-01 10:17:08.5714', '2021-02-08 11:42:51.4286', '2021-02-14 13:42:51.4286'],
+                labels: [' ', 'Dec 21<br>2020', 'Dec 28', 'Jan 4<br>2021', 'Jan 11', 'Jan 18', 'Jan 25', 'Feb 1', 'Feb 8', ' ']
+            },
+            {
+                range: ['2020-12-14 08:00', '2021-01-14 08:00'],
+                positions: ['2020-12-14 05:08:34.2857', '2020-12-16 12:17:08.5714', '2020-12-18 09:08:34.2857', '2020-12-22 12:17:08.5714', '2020-12-24 18:00', '2020-12-28 12:17:08.5714', '2020-12-30 12:17:08.5714', '2021-01-01 09:08:34.2857', '2021-01-05 12:17:08.5714', '2021-01-07 18:00', '2021-01-11 12:17:08.5714', '2021-01-13 12:17:08.5714'],
+                labels: [' ', 'Dec 16<br>2020', 'Dec 18', 'Dec 22', 'Dec 24', 'Dec 28', 'Dec 30', 'Jan 1<br>2021', 'Jan 5', 'Jan 7', 'Jan 11', 'Jan 13']
+            },
+            {
+                range: ['2020-12-14 08:00', '2021-01-01 08:00'],
+                positions: ['2020-12-14 05:08:34.2857', '2020-12-16 12:17:08.5714', '2020-12-18 09:08:34.2857', '2020-12-22 12:17:08.5714', '2020-12-24 18:00', '2020-12-28 12:17:08.5714', '2020-12-30 12:17:08.5714', '2021-01-01 12:17:08.5714'],
+                labels: [' ', 'Dec 16<br>2020', 'Dec 18', 'Dec 22', 'Dec 24', 'Dec 28', 'Dec 30', ' ']
+            },
+            {
+                range: ['2020-12-14 08:00', '2020-12-22 08:00'],
+                positions: ['2020-12-14 04:51:25.7143', '2020-12-15 18:00', '2020-12-16 18:00', '2020-12-17 18:00', '2020-12-18 18:00', '2020-12-21 18:00', '2020-12-22 18:00'],
+                labels: [' ', '06:00<br>Dec 15, 2020', '06:00<br>Dec 16, 2020', '06:00<br>Dec 17, 2020', '06:00<br>Dec 18, 2020', '06:00<br>Dec 21, 2020', ' ']
+            },
+            {
+                range: ['2020-12-14 08:00', '2020-12-18 08:00'],
+                positions: ['2020-12-14 06:00', '2020-12-14 12:00', '2020-12-15 06:00', '2020-12-15 12:00', '2020-12-16 06:00', '2020-12-16 12:00', '2020-12-17 06:00', '2020-12-17 12:00', '2020-12-18 06:00'],
+                labels: [' ', '12:00<br>Dec 14, 2020', '06:00<br>Dec 15, 2020', '12:00', '06:00<br>Dec 16, 2020', '12:00', '06:00<br>Dec 17, 2020', '12:00', '06:00<br>Dec 18, 2020']
+            },
+            {
+                range: ['2020-12-14 08:00', '2020-12-16 08:00'],
+                positions: ['2020-12-14 06:00', '2020-12-14 09:00', '2020-12-14 12:00', '2020-12-14 15:00', '2020-12-15 06:00', '2020-12-15 09:00', '2020-12-15 12:00', '2020-12-15 15:00', '2020-12-16 06:00'],
+                labels: [' ', '09:00<br>Dec 14, 2020', '12:00', '15:00', '06:00<br>Dec 15, 2020', '09:00', '12:00', '15:00', '06:00<br>Dec 16, 2020']
+            }
+        ].forEach(function(t) {
+            it('should position auto labels with rangebreaks | range:' + t.range, function(done) {
+                Plotly.newPlot(gd, {
+                    data: [{
+                        hovertemplate: hovertemplate,
+                        x: [
+                            '2020-12-14 08:00', '2020-12-14 12:00', '2020-12-14 16:00',
+                            '2020-12-15 08:00', '2020-12-15 12:00', '2020-12-15 16:00',
+                            '2020-12-16 08:00', '2020-12-16 12:00', '2020-12-16 16:00',
+                            '2020-12-17 08:00', '2020-12-17 12:00', '2020-12-17 16:00',
+                            '2020-12-18 08:00', '2020-12-18 12:00', '2020-12-18 16:00',
+
+                            '2020-12-21 08:00', '2020-12-21 12:00', '2020-12-21 16:00',
+                            '2020-12-22 08:00', '2020-12-22 12:00', '2020-12-22 16:00',
+                            '2020-12-23 08:00', '2020-12-23 12:00', '2020-12-23 16:00',
+                            '2020-12-24 08:00', '2020-12-24 12:00', '2020-12-24 16:00',
+                            '2020-12-25 08:00', '2020-12-25 12:00', '2020-12-25 16:00',
+
+                            '2020-12-28 08:00', '2020-12-28 12:00', '2020-12-28 16:00',
+                            '2020-12-29 08:00', '2020-12-29 12:00', '2020-12-29 16:00',
+                            '2020-12-30 08:00', '2020-12-30 12:00', '2020-12-30 16:00',
+                            '2020-12-31 08:00', '2020-12-31 12:00', '2020-12-31 16:00',
+                            '2021-01-01 08:00', '2021-01-01 12:00', '2021-01-01 16:00',
+
+                            '2021-01-04 08:00', '2021-01-04 12:00', '2021-01-04 16:00',
+                            '2021-01-05 08:00', '2021-01-05 12:00', '2021-01-05 16:00',
+                            '2021-01-06 08:00', '2021-01-06 12:00', '2021-01-06 16:00',
+                            '2021-01-07 08:00', '2021-01-07 12:00', '2021-01-07 16:00',
+                            '2021-01-08 08:00', '2021-01-08 12:00', '2021-01-08 16:00',
+
+                            '2021-01-11 08:00', '2021-01-11 12:00', '2021-01-11 16:00',
+                            '2021-01-12 08:00', '2021-01-12 12:00', '2021-01-12 16:00',
+                            '2021-01-13 08:00', '2021-01-13 12:00', '2021-01-13 16:00',
+                            '2021-01-14 08:00', '2021-01-14 12:00', '2021-01-14 16:00',
+                            '2021-01-15 08:00', '2021-01-15 12:00', '2021-01-15 16:00',
+                        ]
+                    }],
+                    layout: {
+                        width: 1000,
+                        xaxis: {
+                            rangebreaks: [{
+                                bounds: ['sat', 'mon']
+                            }, {
+                                bounds: [18, 6],
+                                pattern: 'hour'
+                            }],
+                            ticklabelmode: 'period',
+                            range: t.range
+                        }
+                    }
+                })
+                .then(function() {
+                    _assert('', t.positions, t.labels);
+                })
+                .catch(failTest)
+                .then(done);
+            });
+        });
+    });
 });
 
 function getZoomInButton(gd) {
@@ -3785,7 +5980,7 @@ function getZoomOutButton(gd) {
 }
 
 function getFormatter(format) {
-    return d3.time.format.utc(format);
+    return utcFormat(format);
 }
 
 describe('Test Axes.getTickformat', function() {
@@ -4097,6 +6292,232 @@ describe('Test tickformatstops:', function() {
         });
 
         promise
+        .catch(failTest)
+        .then(done);
+    });
+});
+
+describe('Test template:', function() {
+    'use strict';
+
+    var gd;
+    beforeEach(function() {
+        gd = createGraphDiv();
+    });
+    afterEach(destroyGraphDiv);
+
+    it('apply axis *type*, *rangebreaks* and *tickformatstops* from template', function(done) {
+        Plotly.newPlot(gd, {
+            data: [{
+                x: [1e10, 2e10, 3e10, 4e10, 5e10, 6e10, 7e10],
+                y: [1, 2, 3, 4, 5, 6, 7]
+            }],
+            layout: {
+                template: {
+                    layout: {
+                        xaxis: {
+                            type: 'date',
+                            rangebreaks: [{
+                                name: 'name1', // N.B. should provide name
+                                bounds: ['sat', 'mon']
+                            }],
+                            tickformatstops: [{
+                                name: 'name2', // N.B. should provide name
+                                enabled: true,
+                                dtickrange: [1000, 60000],
+                                value: '%H:%M:%S s'
+                            }]
+                        }
+                    }
+                }
+            }
+        })
+        .then(function() {
+            var xaxis = gd._fullLayout.xaxis;
+            expect(xaxis.type).toBe('date');
+            expect(xaxis.rangebreaks).not.toBe(undefined, 'rangebreaks');
+            expect(xaxis.rangebreaks.length).toBe(1);
+            expect(xaxis.tickformatstops).not.toBe(undefined, 'tickformatstops');
+            expect(xaxis.tickformatstops.length).toBe(1);
+        })
+        .catch(failTest)
+        .then(done);
+    });
+});
+
+describe('more react tests', function() {
+    var gd;
+
+    beforeEach(function() {
+        gd = createGraphDiv();
+    });
+
+    afterEach(destroyGraphDiv);
+
+    it('should sort catgories on matching axes using react and relink using relayout', function(done) {
+        var fig = {
+            data: [{
+                yaxis: 'y',
+                xaxis: 'x',
+                y: [0, 0],
+                x: ['A', 'Z']
+            }, {
+                yaxis: 'y2',
+                xaxis: 'x2',
+                y: [0, 0],
+                x: ['A', 'Z']
+            }],
+            layout: {
+                width: 400,
+                height: 300,
+                showlegend: false,
+                xaxis: {
+                    matches: 'x2',
+                    domain: [ 0, 1]
+                },
+                yaxis: {
+                    domain: [0.6, 1],
+                    anchor: 'x'
+                },
+                xaxis2: {
+                    domain: [0, 1],
+                    anchor: 'y2'
+                },
+                yaxis2: {
+                    domain: [0, 0.4],
+                    anchor: 'x2'
+                }
+            }
+        };
+
+        Plotly.newPlot(gd, fig)
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['A', 'Z']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['A', 'Z']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({A: 0, Z: 1});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({A: 0, Z: 1});
+        })
+        .then(function() {
+            // flip order
+            fig.data[0].x = ['Z', 'A'];
+            fig.data[1].x = ['Z', 'A'];
+
+            return Plotly.react(gd, fig);
+        })
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['Z', 'A']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['Z', 'A']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({Z: 0, A: 1});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({Z: 0, A: 1});
+        })
+        .then(function() {
+            // should get the same order with newPlot
+            return Plotly.newPlot(gd, fig);
+        })
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['Z', 'A']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['Z', 'A']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({Z: 0, A: 1});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({Z: 0, A: 1});
+        })
+        .then(function() {
+            // add new category
+            fig.data[0].x = ['Z', 0, 'A'];
+            fig.data[1].x = ['Z', 0, 'A'];
+            fig.data[0].y = [1, 2, 3];
+            fig.data[1].y = [2, 4, 6];
+
+            return Plotly.react(gd, fig);
+        })
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+        })
+        .then(function() {
+            // should get the same order with newPlot
+            return Plotly.newPlot(gd, fig);
+        })
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+        })
+        .then(function() {
+            // change data
+            fig.data[0].x = ['Z', 0, 'A'];
+            fig.data[1].x = ['A', 'Z'];
+            fig.data[0].y = [3, 2, 1];
+            fig.data[1].y = [-1, 0];
+
+            return Plotly.react(gd, fig);
+        })
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+        })
+        .then(function() {
+            // should get the same order with newPlot
+            return Plotly.newPlot(gd, fig);
+        })
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+        })
+        .then(function() {
+            // should get the same order with relayout
+            return Plotly.relayout(gd, 'width', 600);
+        })
+        .then(function() {
+            expect(gd._fullLayout.xaxis._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis2._categories).toEqual(['Z', '0', 'A']);
+            expect(gd._fullLayout.xaxis._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+            expect(gd._fullLayout.xaxis2._categoriesMap).toEqual({Z: 0, 0: 1, A: 2});
+        })
+        .catch(failTest)
+        .then(done);
+    });
+});
+
+describe('more matching axes tests', function() {
+    var gd;
+
+    beforeEach(function() {
+        gd = createGraphDiv();
+    });
+
+    afterEach(destroyGraphDiv);
+
+    it('should bypass non-string id when matching ids', function(done) {
+        Plotly.newPlot(gd, {
+            data: [{
+                x: [0, 1],
+                y: [0, 1]
+            }, {
+                x: [0, 1],
+                y: [1, 2],
+                yaxis: 'y2'
+            }],
+            layout: {
+                xaxis: {
+                    anchor: 'y'
+                },
+                yaxis: {
+                    anchor: 'x'
+                },
+                yaxis2: {
+                    anchor: [], // bad input
+                    position: 0.1,
+                    overlaying: 'y'
+                }
+            }
+        })
         .catch(failTest)
         .then(done);
     });

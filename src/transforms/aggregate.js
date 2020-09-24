@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -374,7 +374,7 @@ function getAggregateFunction(opts, conversions) {
                     if(vi !== BADNUM) sortCalc.push(vi);
                 }
                 if(!sortCalc.length) return BADNUM;
-                sortCalc.sort();
+                sortCalc.sort(Lib.sorterAsc);
                 var mid = (sortCalc.length - 1) / 2;
                 return c2d((sortCalc[Math.floor(mid)] + sortCalc[Math.ceil(mid)]) / 2);
             };

@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -13,6 +13,6 @@ var d3 = require('d3');
 module.exports = function style(gd) {
     d3.select(gd).selectAll('.im image')
         .style('opacity', function(d) {
-            return d.trace.opacity;
+            return d[0].trace.opacity;
         });
 };

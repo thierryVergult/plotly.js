@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -15,5 +15,6 @@ module.exports = function eventData(out, pt) {
     if(pt.ya) out.yaxis = pt.ya;
     out.color = pt.color;
     out.colormodel = pt.trace.colormodel;
+    if(!out.z) out.z = pt.color;
     return out;
 };

@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -43,6 +43,11 @@ module.exports = function handleXYZDefaults(traceIn, traceOut, coerce, layout, x
 
         traceOut._length = null;
     }
+
+    if(
+        traceIn.type === 'heatmapgl' ||
+        traceIn.type === 'contourgl'
+    ) return true; // skip calendars until we handle them in those traces
 
     var handleCalendarDefaults = Registry.getComponentMethod('calendars', 'handleTraceDefaults');
     handleCalendarDefaults(traceIn, traceOut, [xName, yName], layout);

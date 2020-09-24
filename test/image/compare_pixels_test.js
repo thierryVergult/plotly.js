@@ -101,7 +101,10 @@ if(allMock || argv.filter) {
 }
 
 var FLAKY_LIST = [
-    'treemap_textposition'
+    'treemap_coffee',
+    'treemap_textposition',
+    'treemap_sunburst_marker_colors',
+    'treemap_with-without_values',
 ];
 
 console.log('');

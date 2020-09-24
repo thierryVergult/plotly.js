@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -8,20 +8,30 @@
 
 'use strict';
 
-var plotAttrs = require('../../plots/attributes');
+var baseAttrs = require('../../plots/attributes');
 var hovertemplateAttrs = require('../../plots/template_attributes').hovertemplateAttrs;
 var extendFlat = require('../../lib/extend').extendFlat;
 var colormodel = require('./constants').colormodel;
 
-var cm = ['rgb', 'rgba', 'hsl', 'hsla'];
+var cm = ['rgb', 'rgba', 'rgba256', 'hsl', 'hsla'];
 var zminDesc = [];
 var zmaxDesc = [];
 for(var i = 0; i < cm.length; i++) {
-    zminDesc.push('For the `' + cm[i] + '` colormodel, it is [' + colormodel[cm[i]].min.join(', ') + '].');
-    zmaxDesc.push('For the `' + cm[i] + '` colormodel, it is [' + colormodel[cm[i]].max.join(', ') + '].');
+    var cr = colormodel[cm[i]];
+    zminDesc.push('For the `' + cm[i] + '` colormodel, it is [' + (cr.zminDflt || cr.min).join(', ') + '].');
+    zmaxDesc.push('For the `' + cm[i] + '` colormodel, it is [' + (cr.zmaxDflt || cr.max).join(', ') + '].');
 }
 
 module.exports = extendFlat({
+    source: {
+        valType: 'string',
+        role: 'info',
+        editType: 'calc',
+        description: [
+            'Specifies the data URI of the image to be visualized.',
+            'The URI consists of "data:image/[<media subtype>][;base64],<data>"'
+        ].join(' ')
+    },
     z: {
         valType: 'data_array',
         role: 'info',
@@ -33,10 +43,13 @@ module.exports = extendFlat({
     colormodel: {
         valType: 'enumerated',
         values: cm,
-        dflt: 'rgb',
         role: 'info',
         editType: 'calc',
-        description: 'Color model used to map the numerical color components described in `z` into colors.'
+        description: [
+            'Color model used to map the numerical color components described in `z` into colors.',
+            'If `source` is specified, this attribute will be set to `rgba256`',
+            'otherwise it defaults to `rgb`.'
+        ].join(' ')
     },
     zmin: {
         valType: 'info_array',
@@ -108,7 +121,7 @@ module.exports = extendFlat({
         editType: 'plot',
         description: 'Same as `text`.'
     },
-    hoverinfo: extendFlat({}, plotAttrs.hoverinfo, {
+    hoverinfo: extendFlat({}, baseAttrs.hoverinfo, {
         flags: ['x', 'y', 'z', 'color', 'name', 'text'],
         dflt: 'x+y+z+text+name'
     }),

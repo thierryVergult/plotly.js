@@ -9,7 +9,7 @@ var click = require('../assets/click');
 var getClientPosition = require('../assets/get_client_position');
 var mouseEvent = require('../assets/mouse_event');
 var supplyAllDefaults = require('../assets/supply_defaults');
-var rgb = require('../../../src/components/color').rgb;
+var rgb = require('@src/components/color').rgb;
 
 var customAssertions = require('../assets/custom_assertions');
 var assertHoverLabelStyle = customAssertions.assertHoverLabelStyle;
@@ -55,6 +55,49 @@ describe('Pie defaults', function() {
         expect(out.visible).toBe(false);
     });
 
+    it('skip negatives and non-JSON values and avoid zero total', function() {
+        [
+            -1, '-1',
+            0, '0',
+            false, 'false',
+            true, 'true',
+            null, 'null',
+            NaN, 'NaN',
+            -Infinity, '-Infinity',
+            Infinity, 'Infinity',
+            undefined, 'undefined',
+            '', [], {}
+        ].forEach(function(e) {
+            var out;
+
+            out = _supply({type: 'pie', values: [1, e, 3]});
+            expect(out.visible).toBe(true, e);
+            expect(out._length).toBe(3, e);
+
+            out = _supply({type: 'pie', values: [1, e]});
+            expect(out.visible).toBe(true, e);
+            expect(out._length).toBe(2, e);
+
+            out = _supply({type: 'pie', values: [0, e]});
+            expect(out.visible).toBe(false, e);
+            expect(out._length).toBe(undefined, e);
+
+            out = _supply({type: 'pie', values: [e]});
+            expect(out.visible).toBe(false, e);
+            expect(out._length).toBe(undefined, e);
+        });
+    });
+
+    it('convert positive numbers in string format', function() {
+        ['1', '+1', '1e1'].forEach(function(e) {
+            var out;
+
+            out = _supply({type: 'pie', values: [0, e]});
+            expect(out.visible).toBe(true, e);
+            expect(out._length).toBe(2, e);
+        });
+    });
+
     it('is marked invisible if either labels or values is empty', function() {
         var out = _supply({type: 'pie', labels: [], values: [1, 2]});
         expect(out.visible).toBe(false);
@@ -85,6 +128,29 @@ describe('Pie defaults', function() {
 
         var out4 = _supply({type: 'pie', labels: ['A', 'B'], values: [1, 2], automargin: true, textposition: 'outside'});
         expect(out4.automargin).toBe(true, 'textposition outside');
+    });
+
+    it('should not coerce *insidetextorientation* if `textposition` is *outside* or *none*', function() {
+        var out = _supply({type: 'pie', labels: ['A', 'B'], values: [1, 2], textposition: 'none'});
+        expect(out.insidetextorientation).toBe(undefined, 'textposition none');
+
+        var out2 = _supply({type: 'pie', labels: ['A', 'B'], values: [1, 2], textposition: 'outside'});
+        expect(out2.insidetextorientation).toBe(undefined, 'textposition outside');
+    });
+
+    it('should coerce *insidetextorientation* if `textposition` is *inside* or *auto*', function() {
+        var out = _supply({type: 'pie', labels: ['A', 'B'], values: [1, 2], textposition: 'auto'});
+        expect(out.insidetextorientation).toBe('auto', 'textposition auto');
+
+        var out2 = _supply({type: 'pie', labels: ['A', 'B'], values: [1, 2], textposition: 'inside'});
+        expect(out2.insidetextorientation).toBe('auto', 'textposition inside');
+    });
+
+    it('should coerce *insidetextorientation* if `textposition` is an array', function() {
+        var out = _supply({type: 'pie', labels: ['A', 'B', 'C', 'D', 'E', 'F'], values: [1, 2, 3, 4, 5, 6],
+            textposition: [null, '', 'none', 'auto', 'inside', 'outside']
+        });
+        expect(out.insidetextorientation).toBe('auto', 'textposition auto');
     });
 });
 
@@ -1769,6 +1835,344 @@ describe('Test pie interactions edge cases:', function() {
                 unhoverCnt: 0,
                 hoverLabel: 1
             });
+        })
+        .catch(failTest)
+        .then(done);
+    });
+});
+
+describe('pie inside text orientation', function() {
+    'use strict';
+
+    var gd;
+
+    beforeEach(function() {
+        gd = createGraphDiv();
+    });
+
+    afterEach(destroyGraphDiv);
+
+    function assertTextRotations(msg, opts) {
+        return function() {
+            var selection = d3.selectAll(SLICES_TEXT_SELECTOR);
+            var size = selection.size();
+            ['rotations'].forEach(function(e) {
+                expect(size).toBe(opts[e].length, 'length for ' + e + ' does not match with the number of elements');
+            });
+
+            for(var i = 0; i < selection[0].length; i++) {
+                var transform = selection[0][i].getAttribute('transform');
+                var pos0 = transform.indexOf('rotate(');
+                var rotate = 0;
+                if(pos0 !== -1) {
+                    pos0 += 'rotate('.length;
+                    var pos1 = transform.indexOf(')', pos0);
+                    rotate = +(transform.substring(pos0, pos1));
+                }
+
+                expect(opts.rotations[i]).toBeCloseTo(rotate, -1, 'rotation for element ' + i, msg);
+            }
+        };
+    }
+
+    it('should be able to react to new insidetextorientation option', function(done) {
+        var fig = {
+            data: [{
+                type: 'pie',
+                labels: [64, 32, 16, 8],
+                values: [64, 32, 16, 8],
+                sort: false,
+
+                text: [
+                    'very long label',
+                    'label',
+                    'long label',
+                    '+'
+                ],
+
+                textinfo: 'text',
+                textposition: 'inside',
+                showlegend: false
+            }],
+            layout: {
+                width: 300,
+                height: 300
+            }
+        };
+
+        Plotly.plot(gd, fig)
+        .then(assertTextRotations('using default "auto"', {
+            rotations: [-84, 0, -30, 0]
+        }))
+        .then(function() {
+            fig.data[0].insidetextorientation = 'horizontal';
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextRotations('using "horizontal"', {
+            rotations: [0, 0, 0, 0]
+        }))
+        .then(function() {
+            fig.data[0].insidetextorientation = 'radial';
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextRotations('using "radial"', {
+            rotations: [0, 42, -30, -66]
+        }))
+        .then(function() {
+            fig.data[0].insidetextorientation = 'tangential';
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextRotations('using "tangential"', {
+            rotations: [-84, -48, 60, 24]
+        }))
+        .then(function() {
+            fig.data[0].insidetextorientation = 'auto';
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextRotations('back to "auto"', {
+            rotations: [-84, 0, -30, 0]
+        }))
+        .catch(failTest)
+        .then(done);
+    });
+});
+
+describe('pie uniformtext', function() {
+    'use strict';
+
+    var gd;
+
+    beforeEach(function() {
+        gd = createGraphDiv();
+    });
+
+    afterEach(destroyGraphDiv);
+
+    function assertTextSizes(msg, opts) {
+        return function() {
+            var selection = d3.selectAll(SLICES_TEXT_SELECTOR);
+            var size = selection.size();
+            ['fontsizes', 'scales'].forEach(function(e) {
+                expect(size).toBe(opts[e].length, 'length for ' + e + ' does not match with the number of elements');
+            });
+
+            selection.each(function(d, i) {
+                var fontSize = this.style.fontSize;
+                expect(fontSize).toBe(opts.fontsizes[i] + 'px', 'fontSize for element ' + i, msg);
+            });
+
+            for(var i = 0; i < selection[0].length; i++) {
+                var transform = selection[0][i].getAttribute('transform');
+                var pos0 = transform.indexOf('scale(');
+                var scale = 1;
+                if(pos0 !== -1) {
+                    pos0 += 'scale('.length;
+                    var pos1 = transform.indexOf(')', pos0);
+                    scale = +(transform.substring(pos0, pos1));
+                }
+
+                expect(opts.scales[i]).toBeCloseTo(scale, 1, 'scale for element ' + i, msg);
+            }
+        };
+    }
+
+    it('should be able to react with new uniform text options', function(done) {
+        var fig = {
+            data: [{
+                type: 'pie',
+                labels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                values: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                sort: false,
+
+                text: [
+                    0,
+                    '<br>',
+                    null,
+                    '',
+                    ' ',
+                    '.',
+                    '+',
+                    '=',
+                    '$',
+                    'very long lablel'
+                ],
+
+                textinfo: 'text',
+                textposition: 'inside',
+                showlegend: false
+            }],
+            layout: {
+                width: 300,
+                height: 300
+            }
+        };
+
+        Plotly.plot(gd, fig)
+        .then(assertTextSizes('without uniformtext', {
+            fontsizes: [12, 12, 12, 12, 12, 12, 12, 12],
+            scales: [1, 1, 1, 1, 1, 1, 1, 0.52],
+        }))
+        .then(function() {
+            fig.layout.uniformtext = {mode: 'hide'}; // default with minsize=0
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextSizes('using mode: "hide"', {
+            fontsizes: [12, 12, 12, 12, 12, 12, 12, 12],
+            scales: [0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52, 0.52],
+        }))
+        .then(function() {
+            fig.layout.uniformtext.minsize = 9; // set a minsize less than trace font size
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextSizes('using minsize: 9', {
+            fontsizes: [12, 12, 12, 12, 12, 12, 12, 12],
+            scales: [1, 1, 1, 1, 1, 1, 1, 0],
+        }))
+        .then(function() {
+            fig.layout.uniformtext.minsize = 32; // set a minsize greater than trace font size
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextSizes('using minsize: 32', {
+            fontsizes: [32, 32, 32, 32, 32, 32, 32, 32],
+            scales: [0, 1, 1, 1, 0, 0, 0, 0],
+        }))
+        .then(function() {
+            fig.layout.uniformtext.minsize = 16; // set a minsize greater than trace font size
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextSizes('using minsize: 16', {
+            fontsizes: [16, 16, 16, 16, 16, 16, 16, 16],
+            scales: [1, 1, 1, 1, 1, 1, 1, 0],
+        }))
+        .then(function() {
+            fig.layout.uniformtext.mode = 'show';
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextSizes('using mode: "show"', {
+            fontsizes: [16, 16, 16, 16, 16, 16, 16, 16],
+            scales: [1, 1, 1, 1, 1, 1, 1, 1],
+        }))
+        .then(function() {
+            fig.layout.uniformtext = undefined; // back to default
+            return Plotly.react(gd, fig);
+        })
+        .then(assertTextSizes('clear uniformtext', {
+            fontsizes: [12, 12, 12, 12, 12, 12, 12, 12],
+            scales: [1, 1, 1, 1, 1, 1, 1, 0.52],
+        }))
+        .catch(failTest)
+        .then(done);
+    });
+});
+
+describe('pie value format', function() {
+    'use strict';
+
+    var gd;
+
+    beforeEach(function() {
+        gd = createGraphDiv();
+    });
+
+    afterEach(destroyGraphDiv);
+
+    it('should handle rounding big & small values', function(done) {
+        Plotly.newPlot(gd, [{
+            type: 'pie',
+            textinfo: 'value',
+            values: [
+                123456789012,
+                12345678901.2,
+                1234567890.12,
+                123456789.012,
+                12345678.9012,
+                1234567.89012,
+                123456.789012,
+                12345.6789012,
+                1234.56789012,
+                123.456789012,
+                12.3456789012,
+                1.23456789012,
+                0.123456789012,
+                0.0123456789012,
+                0.00123456789012,
+                0.000123456789012,
+                0.0000123456789012,
+                0.00000123456789012,
+                0.000000123456789012,
+                0.0000000123456789012
+            ]
+        }])
+        .then(function() {
+            var exp = [
+                '1.23456789e+11',
+                '1.23456789e+10',
+                '1,234,567,890',
+                '123,456,789',
+                '12,345,678.9',
+                '1,234,567.89',
+                '123,456.789',
+                '12,345.6789',
+                '1,234.56789',
+                '123.456789',
+                '12.3456789',
+                '1.23456789',
+                '0.123456789',
+                '0.0123456789',
+                '0.00123456789',
+                '0.000123456789',
+                '0.0000123456789',
+                '0.00000123456789',
+                '1.23456789e-7',
+                '1.23456789e-8'
+            ];
+
+            var selection = d3.selectAll(SLICES_TEXT_SELECTOR);
+            for(var i = 0; i < selection[0].length; i++) {
+                var text = selection[0][i].getAttribute('data-unformatted');
+                expect(text).toBe(exp[i]);
+            }
+        })
+        .catch(failTest)
+        .then(done);
+    });
+
+    it('should handle rounding big & small percents', function(done) {
+        Plotly.newPlot(gd, [{
+            type: 'pie',
+            textinfo: 'percent',
+            values: [
+                0.9,
+                0.09,
+                0.009,
+                0.0009,
+                0.00009,
+                0.000009,
+                0.0000009,
+                0.00000009,
+                0.000000009,
+                0.0000000009
+            ]
+        }])
+        .then(function() {
+            var exp = [
+                '90%',
+                '9%',
+                '0.9%',
+                '0.09%',
+                '0.009%',
+                '0.0009%',
+                '0.00009%',
+                '0.000009%',
+                '9e-7%',
+                '9e-8%'
+            ];
+
+            var selection = d3.selectAll(SLICES_TEXT_SELECTOR);
+            for(var i = 0; i < selection[0].length; i++) {
+                var text = selection[0][i].innerHTML;
+                expect(text).toBe(exp[i]);
+            }
         })
         .catch(failTest)
         .then(done);

@@ -1,5 +1,5 @@
 /**
-* Copyright 2012-2019, Plotly, Inc.
+* Copyright 2012-2020, Plotly, Inc.
 * All rights reserved.
 *
 * This source code is licensed under the MIT license found in the
@@ -28,6 +28,15 @@ for(var i = 0; i < commonList.length; i++) {
     var k = commonList[i];
     attrs[k] = heatmapAttrs[k];
 }
+
+attrs.zsmooth = {
+    valType: 'enumerated',
+    values: ['fast', false],
+    dflt: 'fast',
+    role: 'style',
+    editType: 'calc',
+    description: 'Picks a smoothing algorithm use to smooth `z` data.'
+};
 
 extendFlat(
     attrs,
